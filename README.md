@@ -36,6 +36,18 @@
 | Web Notifications API | 系统级推送提醒 |
 | OpenAI API（可选）| AI 自然语言药单解析 |
 
+### Docker 部署
+
+```bash
+# 构建镜像
+docker build -t medication-reminder .
+
+# 运行容器（映射到宿主机 8080 端口）
+docker run -d -p 8080:80 --name medication-reminder medication-reminder
+```
+
+运行后，在浏览器中打开 `http://localhost:8080` 即可访问应用。
+
 ### 快速开始
 
 1. 使用浏览器打开应用页面（或将仓库部署至静态托管服务，如 GitHub Pages）。
@@ -96,6 +108,18 @@ MedicationReminder-/
 | IndexedDB | Client-side persistent data storage |
 | Web Notifications API | System-level push reminders |
 | OpenAI API (optional) | AI-powered natural-language prescription parsing |
+
+### Docker Deployment
+
+```bash
+# Build the image
+docker build -t medication-reminder .
+
+# Run the container (exposed on host port 8080)
+docker run -d -p 8080:80 --name medication-reminder medication-reminder
+```
+
+Then open `http://localhost:8080` in your browser to access the app.
 
 ### Getting Started
 
