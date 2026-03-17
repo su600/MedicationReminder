@@ -1,5 +1,5 @@
 /* Service Worker for 用药助手 PWA */
-const CACHE_NAME = 'medication-reminder-v1';
+const CACHE_NAME = 'medication-reminder-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

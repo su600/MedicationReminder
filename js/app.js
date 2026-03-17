@@ -306,6 +306,7 @@ const App = {
      MAIN APP
      ───────────────────────────────────────── */
   showMainApp() {
+    document.getElementById('onboarding').classList.add('hidden');
     document.getElementById('mainApp').classList.remove('hidden');
     this.bindMainEvents();
     this.renderAll();
@@ -1006,6 +1007,10 @@ const App = {
      EVENT BINDINGS
      ───────────────────────────────────────── */
   bindMainEvents() {
+    // Guard: only bind once
+    if (this._eventsBound) return;
+    this._eventsBound = true;
+
     // User dropdown toggle
     document.getElementById('userSwitchBtn').addEventListener('click', (e) => {
       e.stopPropagation();
