@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1565C0">
+  <meta name="description" content="智能药物提醒系统，支持多用户，守护家人健康">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="用药助手">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+  <title>用药助手 – 智能药物提醒</title>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════
+     ONBOARDING SCREEN
+     ═══════════════════════════════════════ -->
+<div id="onboarding" class="screen">
+  <div class="onboarding-container">
+    <div class="app-logo">💊</div>
+    <h1 class="app-title">用药助手</h1>
+    <p class="app-subtitle">智能提醒 · 家人关爱 · 健康守护</p>
+
+    <div class="setup-form">
+      <h2>欢迎使用</h2>
+      <p>首次使用请设置您的基本信息</p>
+
+      <div class="form-group">
+        <label>您的姓名</label>
+        <input type="text" id="userName" placeholder="请输入您的姓名" maxlength="20" autocomplete="name">
+      </div>
+
+      <div class="form-group">
+        <label>您的角色</label>
+        <div class="role-selector">
+          <button class="role-btn active" data-role="patient">
+            <span class="role-icon">🤒</span>
+            <span>患者本人</span>
+          </button>
+          <button class="role-btn" data-role="family">
+            <span class="role-icon">👨‍👩‍👧</span>
+            <span>家庭成员</span>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn-primary btn-large" id="startBtn">开始使用 →</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     MAIN APP
+     ═══════════════════════════════════════ -->
+<div id="mainApp" class="screen hidden">
+
+  <!-- ── App Header ── -->
+  <header class="app-header">
+    <div class="header-time">
+      <div class="current-time" id="currentTime">00:00</div>
+      <div class="current-date" id="currentDate">正在获取时间…</div>
+    </div>
+    <div class="header-user">
+      <button class="user-switch-btn" id="userSwitchBtn" aria-label="切换用户">
+        <span id="currentUserName">用户</span>
+        <span class="user-arrow">▾</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── User Switcher Dropdown ── -->
+  <div class="user-dropdown hidden" id="userDropdown" role="menu">
+    <div class="dropdown-header">切换用户</div>
+    <div id="userList"></div>
+    <button class="btn-add-user" id="addUserBtn">＋ 添加用户</button>
+  </div>
+
+  <!-- ── Low Stock Alert ── -->
+  <div class="alert-banner hidden" id="lowStockAlert" role="alert">
+    <span class="alert-icon">⚠️</span>
+    <span id="lowStockMessage"></span>
+    <button class="alert-close" id="closeLowStockAlert" aria-label="关闭">✕</button>
+  </div>
+
+  <!-- ── Main Content ── -->
+  <main class="app-content">
+
+    <!-- ── TODAY TAB ── -->
+    <section class="tab-content active" id="tabToday" role="main">
+      <div class="section-title">今日用药</div>
+      <div id="todayMedications"></div>
+      <div class="empty-state hidden" id="todayEmpty">
+        <div class="empty-icon">💊</div>
+        <p>今日没有用药安排</p>
+        <button class="btn-primary" onclick="showTab('tabMedications')">去添加药品</button>
+      </div>
+    </section>
+
+    <!-- ── MEDICATIONS TAB ── -->
+    <section class="tab-content" id="tabMedications">
+      <div class="section-header">
+        <div class="section-title">药品管理</div>
+        <button class="btn-icon" id="addMedicationBtn" aria-label="添加药品">＋</button>
+      </div>
+      <div id="medicationList"></div>
+      <div class="empty-state hidden" id="medicationsEmpty">
+        <div class="empty-icon">📋</div>
+        <p>还没有添加任何药品</p>
+        <button class="btn-primary" id="addFirstMedBtn">添加第一个药品</button>
+      </div>
+    </section>
+
+    <!-- ── HISTORY TAB ── -->
+    <section class="tab-content" id="tabHistory">
+      <div class="section-title">用药记录</div>
+      <div class="history-nav">
+        <button class="btn-nav-arrow" id="historyPrev" aria-label="前一天">◀</button>
+        <span class="history-nav-title" id="historyNavTitle">今天</span>
+        <button class="btn-nav-arrow" id="historyNext" aria-label="后一天">▶</button>
+      </div>
+      <div id="historyRecords">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <span>加载中…</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SETTINGS TAB ── -->
+    <section class="tab-content" id="tabSettings">
+      <div class="section-title">设置</div>
+      <div class="settings-list">
+
+        <div class="settings-group">
+          <div class="settings-group-title">通知设置</div>
+          <div class="settings-item">
+            <span>用药提醒通知</span>
+            <label class="toggle">
+              <input type="checkbox" id="notificationToggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-item">
+            <span>提前提醒时间</span>
+            <select id="reminderAdvance">
+              <option value="0">准时提醒</option>
+              <option value="5">提前 5 分钟</option>
+              <option value="10" selected>提前 10 分钟</option>
+              <option value="15">提前 15 分钟</option>
+              <option value="30">提前 30 分钟</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">AI 智能功能</div>
+          <div class="settings-item">
+            <span>AI 药单解析</span>
+            <label class="toggle">
+              <input type="checkbox" id="aiToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-item hidden" id="aiKeyItem">
+            <span>配置 API</span>
+            <button class="btn-text" id="setApiKeyBtn">设置 →</button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">家庭共享</div>
+          <div class="settings-item">
+            <span>家庭代码</span>
+            <span class="family-code" id="familyCode">—</span>
+          </div>
+          <div class="settings-item">
+            <span class="text-muted" style="font-size:0.9rem">
+              将此代码告诉家人，家人添加用户时使用相同代码即可关联查看
+            </span>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">用户管理</div>
+          <div id="settingsUserList"></div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">关于</div>
+          <div class="settings-item">
+            <span>版本</span>
+            <span class="text-muted">1.0.0</span>
+          </div>
+          <div class="settings-item">
+            <span>开发者</span>
+            <span class="text-muted">用药助手团队</span>
+          </div>
+          <div class="settings-item">
+            <button class="btn-danger-text" id="clearDataBtn">⚠️ 清除所有数据</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Bottom Navigation ── -->
+  <nav class="bottom-nav" role="navigation">
+    <button class="nav-btn active" data-tab="tabToday">
+      <span class="nav-icon">💊</span>
+      <span>今日</span>
+    </button>
+    <button class="nav-btn" data-tab="tabMedications">
+      <span class="nav-icon">📋</span>
+      <span>药品</span>
+    </button>
+    <button class="nav-btn" data-tab="tabHistory">
+      <span class="nav-icon">📅</span>
+      <span>记录</span>
+    </button>
+    <button class="nav-btn" data-tab="tabSettings">
+      <span class="nav-icon">⚙️</span>
+      <span>设置</span>
+    </button>
+  </nav>
+
+</div><!-- /#mainApp -->
+
+
+<!-- ═══════════════════════════════════════
+     MODAL OVERLAY
+     ═══════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modalOverlay"></div>
+
+
+<!-- ═══════════════════════════════════════
+     ADD / EDIT MEDICATION MODAL
+     ═══════════════════════════════════════ -->
+<div class="modal hidden" id="medicationModal" role="dialog" aria-labelledby="modalTitle" aria-modal="true">
+  <div class="modal-header">
+    <h2 id="modalTitle">添加药品</h2>
+    <button class="btn-close" id="closeMedicationModal" aria-label="关闭">✕</button>
+  </div>
+
+  <div class="modal-body">
+
+    <!-- AI Input Section -->
+    <div class="ai-input-section" id="aiInputSection">
+      <span class="ai-badge">🤖 AI 解析</span>
+      <label>用自然语言描述您的药单</label>
+      <textarea id="aiInput"
+        placeholder="例如：阿莫西林每天三次，每次两片，饭后服用，共60片"
+        rows="3"></textarea>
+      <button class="btn-accent" id="parseAiBtn">✨ 智能解析药单</button>
+      <div class="or-divider"><span>或者手动填写下方表单</span></div>
+    </div>
+
+    <!-- Manual Form -->
+    <div class="form-group">
+      <label>药品名称 *</label>
+      <input type="text" id="medName" placeholder="例如：阿莫西林、血压片" autocomplete="off">
+    </div>
+
+    <div class="form-group">
+      <label>每次剂量 *</label>
+      <div class="input-with-unit">
+        <input type="number" id="medDose" placeholder="1" min="0.1" step="0.5" value="1">
+        <select id="medUnit">
+          <option value="片">片</option>
+          <option value="粒">粒</option>
+          <option value="ml">ml</option>
+          <option value="mg">mg</option>
+          <option value="袋">袋</option>
+          <option value="支">支</option>
+          <option value="瓶">瓶</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>服药时间（可多选）*</label>
+      <div class="time-checkboxes">
+        <label class="time-check">
+          <input type="checkbox" class="med-time" value="07:00">
+          <span>🌅 早餐后 07:00</span>
+        </label>
+        <label class="time-check">
+          <input type="checkbox" class="med-time" value="12:00">
+          <span>☀️ 午餐后 12:00</span>
+        </label>
+        <label class="time-check">
+          <input type="checkbox" class="med-time" value="18:00">
+          <span>🌆 晚餐后 18:00</span>
+        </label>
+        <label class="time-check">
+          <input type="checkbox" class="med-time" value="22:00">
+          <span>🌙 睡前 22:00</span>
+        </label>
+      </div>
+      <button class="btn-text btn-small" id="addCustomTimeBtn">＋ 添加自定义时间</button>
+      <div id="customTimes"></div>
+    </div>
+
+    <div class="form-group">
+      <label>现有数量（用于追踪余量）</label>
+      <div class="input-with-unit">
+        <input type="number" id="medQuantity" placeholder="0" min="0" value="0">
+        <span class="unit-label" id="medQuantityUnit">片</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>备注说明</label>
+      <input type="text" id="medNotes" placeholder="例如：饭后服用、不能与酒精同服">
+    </div>
+
+    <div class="form-group">
+      <label>适用患者</label>
+      <select id="medPatient"></select>
+    </div>
+
+  </div><!-- /.modal-body -->
+
+  <div class="modal-footer">
+    <button class="btn-secondary" id="cancelMedicationBtn">取消</button>
+    <button class="btn-primary" id="saveMedicationBtn">💾 保存药品</button>
+  </div>
+</div><!-- /#medicationModal -->
+
+
+<!-- ═══════════════════════════════════════
+     ADD USER MODAL
+     ═══════════════════════════════════════ -->
+<div class="modal hidden" id="userModal" role="dialog" aria-labelledby="userModalTitle" aria-modal="true">
+  <div class="modal-header">
+    <h2 id="userModalTitle">添加用户</h2>
+    <button class="btn-close" id="closeUserModal" aria-label="关闭">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-group">
+      <label>姓名</label>
+      <input type="text" id="newUserName" placeholder="请输入姓名" maxlength="20" autocomplete="name">
+    </div>
+    <div class="form-group">
+      <label>角色</label>
+      <div class="role-selector">
+        <button class="role-btn active" data-role="patient" id="rolePatient">
+          <span class="role-icon">🤒</span>
+          <span>患者本人</span>
+        </button>
+        <button class="role-btn" data-role="family" id="roleFamily">
+          <span class="role-icon">👨‍👩‍👧</span>
+          <span>家庭成员</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn-secondary" id="cancelUserBtn">取消</button>
+    <button class="btn-primary" id="saveUserBtn">添加用户</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     API KEY MODAL
+     ═══════════════════════════════════════ -->
+<div class="modal hidden" id="apiKeyModal" role="dialog" aria-labelledby="apiModalTitle" aria-modal="true">
+  <div class="modal-header">
+    <h2 id="apiModalTitle">🤖 AI API 设置</h2>
+    <button class="btn-close" id="closeApiKeyModal" aria-label="关闭">✕</button>
+  </div>
+  <div class="modal-body">
+    <p class="text-muted" style="margin-bottom:16px">
+      支持 OpenAI GPT 及兼容接口（如 Azure OpenAI、通义千问等）
+    </p>
+    <div class="form-group">
+      <label>API 地址</label>
+      <input type="url" id="apiBaseUrl"
+        placeholder="https://api.openai.com/v1"
+        value="https://api.openai.com/v1">
+    </div>
+    <div class="form-group">
+      <label>API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-…" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label>模型名称</label>
+      <input type="text" id="apiModel" placeholder="gpt-3.5-turbo" value="gpt-3.5-turbo">
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn-secondary" id="cancelApiKeyBtn">取消</button>
+    <button class="btn-primary" id="saveApiKeyBtn">保存设置</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     TOAST
+     ═══════════════════════════════════════ -->
+<div class="toast hidden" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+
+<!-- ═══════════════════════════════════════
+     SCRIPTS
+     ═══════════════════════════════════════ -->
+<script src="js/db.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
