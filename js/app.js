@@ -43,11 +43,22 @@ const App = {
 
     // Register service worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(console.warn);
+      navigator.serviceWorker.register('sw.js').catch(console.warn);
       navigator.serviceWorker.addEventListener('message', (e) => {
         if (e.data?.type === 'MARK_TAKEN') this.handleExternalMark(e.data.data);
+        if (e.data?.type === 'SNOOZE')     this.handleSnooze(e.data.data);
       });
     }
+
+    // Handle snooze data passed via URL query string (SW opens page with ?snooze=...)
+    try {
+      const snoozeParam = new URLSearchParams(location.search).get('snooze');
+      if (snoozeParam) {
+        this.handleSnooze(JSON.parse(decodeURIComponent(snoozeParam)));
+        // Remove the query string without reloading
+        history.replaceState(null, '', location.pathname);
+      }
+    } catch (_) { /* ignore malformed snooze param */ }
 
     if (this.state.users.length === 0 || !this.state.settings.activeUserId) {
       this.showOnboarding();
@@ -134,13 +145,16 @@ const App = {
       }
     }
 
-    // Mark overdue as missed (scheduled time + MISSED_THRESHOLD_MINUTES has passed)
-    const nowMin = nowMinutes();
+    // Mark overdue as missed using absolute local scheduled timestamp (handles midnight correctly)
+    const nowMs = Date.now();
+    const thresholdMs = MISSED_THRESHOLD_MINUTES * 60 * 1000;
     for (const rec of this.state.records) {
       if (rec.status === 'pending') {
-        const [h, m] = rec.scheduledTime.split(':').map(Number);
-        const schMin = h * 60 + m;
-        if (nowMin - schMin > MISSED_THRESHOLD_MINUTES) {
+        // Construct using local date components to avoid UTC/local ambiguity
+        const [year, month, day] = rec.date.split('-').map(Number);
+        const [hour, min] = rec.scheduledTime.split(':').map(Number);
+        const scheduledMs = new Date(year, month - 1, day, hour, min, 0).getTime();
+        if (nowMs - scheduledMs > thresholdMs) {
           rec.status = 'missed';
           await DB.saveRecord(rec);
           changed = true;
@@ -176,6 +190,22 @@ const App = {
 
   async handleExternalMark(data) {
     if (data?.recordId) await this.markTaken(data.recordId);
+  },
+
+  /* Schedule a local notification snooze from a SW message or URL param */
+  handleSnooze(data) {
+    if (!data) return;
+    const delay = data.snoozeMs || 15 * 60 * 1000;
+    setTimeout(() => {
+      if (Notification.permission !== 'granted') return;
+      const n = new Notification(data.title || '用药提醒 💊', {
+        body:             data.body || '该服药了！',
+        icon:             'icons/icon-192.png',
+        tag:              data.tag || 'medication-snooze',
+        requireInteraction: true
+      });
+      n.onclick = () => { window.focus(); n.close(); };
+    }, delay);
   },
 
   /* ─────────────────────────────────────────
@@ -337,8 +367,8 @@ const App = {
       if (timeEl) timeEl.textContent = time;
       if (dateEl) dateEl.textContent = date;
 
-      // Refresh today's data when the date changes (compare vs last known date)
-      const todayDate = now.toISOString().slice(0, 10);
+      // Refresh today's data when the local date changes
+      const todayDate = todayStr();
       if (todayDate !== this._lastClockDate) {
         this._lastClockDate = todayDate;
         if (this._midnightRefreshPending) return;
@@ -646,12 +676,9 @@ const App = {
       }
     }
 
-    // Sync unit label
-    const unitSel = document.getElementById('medUnit');
-    unitSel.addEventListener('change', () => {
-      document.getElementById('medQuantityUnit').textContent = unitSel.value;
-    });
-    document.getElementById('medQuantityUnit').textContent = unitSel.value;
+    // Sync unit label (bound once here, not on every modal open)
+    document.getElementById('medQuantityUnit').textContent =
+      document.getElementById('medUnit').value;
 
     modal.classList.remove('hidden');
     overlay.classList.remove('hidden');
@@ -945,12 +972,38 @@ const App = {
 
   async deleteUser(userId) {
     if (!confirm('确认删除此用户及其所有数据？')) return;
+
+    const isDeletingActive = userId === this.state.activeUser?.id ||
+                             userId === this.state.settings.activeUserId;
+
     await DB.deleteMedicationsByUser(userId);
     await DB.deleteRecordsByUser(userId);
     await DB.deleteUser(userId);
     this.state.users = this.state.users.filter((u) => u.id !== userId);
-    this.renderAll();
-    showToast('用户已删除');
+
+    if (isDeletingActive) {
+      const next = this.state.users[0];
+      if (next) {
+        // Switch to another existing user
+        await this.setActiveUser(next.id, true);
+        this.renderAll();
+        showToast('用户已删除，已切换到 ' + next.name);
+      } else {
+        // No users left: reset and show onboarding
+        this.state.activeUser = null;
+        this.state.viewedPatient = null;
+        this.state.medications = [];
+        this.state.records = [];
+        this.state.settings.activeUserId = null;
+        await DB.saveSettings(this.state.settings);
+        document.getElementById('mainApp').classList.add('hidden');
+        document.getElementById('onboarding').classList.remove('hidden');
+        showToast('用户已删除');
+      }
+    } else {
+      this.renderAll();
+      showToast('用户已删除');
+    }
   },
 
   /* ─────────────────────────────────────────
@@ -1029,7 +1082,11 @@ const App = {
     document.getElementById('addMedicationBtn')?.addEventListener('click', () => this.openMedicationModal());
     document.getElementById('addFirstMedBtn')?.addEventListener('click', () => this.openMedicationModal());
 
-    // Medication modal
+    // Medication modal – bind the unit change listener once here
+    document.getElementById('medUnit').addEventListener('change', () => {
+      document.getElementById('medQuantityUnit').textContent =
+        document.getElementById('medUnit').value;
+    });
     document.getElementById('closeMedicationModal').addEventListener('click', () => this.closeMedicationModal());
     document.getElementById('cancelMedicationBtn').addEventListener('click', () => this.closeMedicationModal());
     document.getElementById('saveMedicationBtn').addEventListener('click', () => this.saveMedication());
@@ -1132,12 +1189,11 @@ function genFamilyCode() {
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function nowMinutes() {
   const now = new Date();
-  return now.getHours() * 60 + now.getMinutes();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function timeLabel(t) {

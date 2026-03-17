@@ -2,7 +2,7 @@
   "name": "用药助手 - 智能药物提醒",
   "short_name": "用药助手",
   "description": "智能药物提醒系统，支持多用户，守护家人健康",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#FFFFFF",
   "theme_color": "#1565C0",
@@ -25,7 +25,7 @@
   ],
   "screenshots": [],
   "share_target": {
-    "action": "/",
+    "action": "./",
     "method": "GET",
     "enctype": "application/x-www-form-urlencoded",
     "params": {
