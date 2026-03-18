@@ -910,7 +910,7 @@ body {
   margin-bottom: 8px;
 }
 .ai-input-section label { display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 8px; }
-.ai-input-section textarea { margin-bottom: 10px; }
+.ai-input-section textarea { margin-bottom: 10px; min-height: 140px; border-radius: var(--radius); }
 .ai-loading { text-align: center; padding: 10px; color: var(--primary); font-size: 0.95rem; }
 
 .or-divider {

@@ -824,33 +824,66 @@ const App = {
     parseBtn.textContent = '解析中…';
 
     try {
-      const result = await AI.parse(text, {
+      const results = await AI.parse(text, {
         apiBaseUrl: this.state.settings.apiBaseUrl,
         apiKey:     this.state.settings.apiKey,
         apiModel:   this.state.settings.apiModel
       });
 
-      if (result.name) document.getElementById('medName').value = result.name;
-      if (result.dose) document.getElementById('medDose').value = result.dose;
-      if (result.unit) document.getElementById('medUnit').value = result.unit;
-      if (result.quantity) document.getElementById('medQuantity').value = result.quantity;
-      if (result.notes) document.getElementById('medNotes').value = result.notes;
-      document.getElementById('medQuantityUnit').textContent = result.unit || '片';
+      if (results.length === 1) {
+        // Single medication: fill the form as before so the user can review and save
+        const result = results[0];
+        if (result.name) document.getElementById('medName').value = result.name;
+        if (result.dose) document.getElementById('medDose').value = result.dose;
+        if (result.unit) document.getElementById('medUnit').value = result.unit;
+        if (result.quantity) document.getElementById('medQuantity').value = result.quantity;
+        if (result.notes) document.getElementById('medNotes').value = result.notes;
+        document.getElementById('medQuantityUnit').textContent = result.unit || '片';
 
-      // Set times
-      document.querySelectorAll('.med-time').forEach((cb) => (cb.checked = false));
-      document.getElementById('customTimes').innerHTML = '';
-      if (result.times?.length) {
-        for (const t of result.times) {
-          const cb = document.querySelector(`.med-time[value="${t}"]`);
-          if (cb) {
-            cb.checked = true;
-          } else {
-            this.addCustomTimeRow(t);
+        // Set times
+        document.querySelectorAll('.med-time').forEach((cb) => (cb.checked = false));
+        document.getElementById('customTimes').innerHTML = '';
+        if (result.times?.length) {
+          for (const t of result.times) {
+            const cb = document.querySelector(`.med-time[value="${t}"]`);
+            if (cb) {
+              cb.checked = true;
+            } else {
+              this.addCustomTimeRow(t);
+            }
           }
         }
+        showToast('药单解析成功', 'success');
+      } else {
+        // Multiple medications: batch-add them all to the database
+        const userId = document.getElementById('medPatient').value;
+        let added = 0;
+        for (const result of results) {
+          if (!result.name) continue;
+          const times = (result.times?.length) ? [...result.times].sort() : ['08:00']; // lexicographic sort works for HH:MM strings
+          const med = {
+            id:        genId(),
+            userId,
+            createdAt: Date.now(),
+            name:      result.name,
+            dose:      result.dose || 1,
+            unit:      result.unit || '片',
+            times,
+            quantity:  result.quantity || 0,
+            notes:     result.notes || '',
+            active:    true
+          };
+          await DB.saveMedication(med);
+          this.state.medications.push(med);
+          added++;
+        }
+        await this.ensureTodayRecords();
+        this.renderAll();
+        this.scheduleNotifications();
+        this.checkLowStock();
+        this.closeMedicationModal();
+        showToast(`已成功解析并添加 ${added} 种药品`, 'success');
       }
-      showToast('药单解析成功', 'success');
     } catch (err) {
       showToast('解析失败：' + err.message, 'error');
     } finally {
