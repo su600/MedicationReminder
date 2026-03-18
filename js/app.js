@@ -126,7 +126,7 @@ const App = {
     const patient = this.state.viewedPatient;
     if (!patient) return;
 
-    const activeMeds = this.state.medications.filter((m) => m.active !== false);
+    const activeMeds = this.state.medications.filter((m) => m.active !== false && m.userId === patient.id);
     let changed = false;
 
     for (const med of activeMeds) {
@@ -717,12 +717,17 @@ const App = {
         if (patSel.querySelector(`option[value="${med.userId}"]`)) {
           patSel.value = med.userId;
         }
+        // Disable patient selector in edit mode: reassigning a medication to a
+        // different patient would require migrating its history records and is
+        // not supported via this form.
+        patSel.disabled = true;
 
         for (const t of (med.times || [])) {
           this.addCustomTimeRow(t);
         }
       }
     } else {
+      patSel.disabled = false;
       // Pre-populate with common default times for convenience
       ['07:00', '12:00', '18:00'].forEach((t) => this.addCustomTimeRow(t));
     }
@@ -789,7 +794,8 @@ const App = {
     const unit = document.getElementById('medUnit').value;
     const notes    = document.getElementById('medNotes').value.trim();
     const quantity = parseInt(document.getElementById('medQuantity').value) || 0;
-    const userId   = document.getElementById('medPatient').value;
+    const userId   = document.getElementById('medPatient').value || this.state.viewedPatient?.id || '';
+    if (!userId) { showToast('请先选择患者', 'warn'); return; }
 
     // Collect times, de-duplicating via Set
     const timesRaw = [];
@@ -808,7 +814,11 @@ const App = {
     await DB.saveMedication(med);
 
     if (isNew) {
-      this.state.medications.push(med);
+      // Only add to in-memory state if this medication belongs to the currently viewed patient;
+      // otherwise it would appear then disappear after the next data reload.
+      if (med.userId === this.state.viewedPatient?.id) {
+        this.state.medications.push(med);
+      }
     } else {
       const idx = this.state.medications.findIndex((m) => m.id === med.id);
       if (idx >= 0) this.state.medications[idx] = med;
@@ -876,6 +886,10 @@ const App = {
     const text = document.getElementById('aiInput').value.trim();
     if (!text) { showToast('请先输入药单描述', 'warn'); return; }
 
+    // Fail fast: resolve patient before the (potentially costly) AI call
+    const userId = document.getElementById('medPatient').value || this.state.viewedPatient?.id || '';
+    if (!userId) { showToast('请先选择患者', 'warn'); return; }
+
     const parseBtn = document.getElementById('parseAiBtn');
     parseBtn.disabled = true;
     parseBtn.textContent = '解析中…';
@@ -886,8 +900,6 @@ const App = {
         apiKey:     this.state.settings.apiKey,
         apiModel:   this.state.settings.apiModel
       });
-
-      const userId = document.getElementById('medPatient').value;
 
       if (results.length === 0) {
         showToast('未识别到任何药品，请检查输入内容', 'warn');
@@ -912,7 +924,9 @@ const App = {
             active:    true,
           };
           await DB.saveMedication(med);
-          this.state.medications.push(med);
+          if (med.userId === this.state.viewedPatient?.id) {
+            this.state.medications.push(med);
+          }
           await this.ensureTodayRecords();
           this.renderAll();
           this.scheduleNotifications();
@@ -941,7 +955,9 @@ const App = {
             active:    true
           };
           await DB.saveMedication(med);
-          this.state.medications.push(med);
+          if (med.userId === this.state.viewedPatient?.id) {
+            this.state.medications.push(med);
+          }
           added++;
         }
         if (added === 0) {
