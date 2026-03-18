@@ -1114,7 +1114,7 @@ const App = {
       if (keyLabel) keyLabel.textContent = '阿里云 API Key';
       const kInp = document.getElementById('apiKeyInput');
       if (kInp) kInp.placeholder = 'sk-…';
-      if (descEl) descEl.textContent = '使用阿里云百炼平台的 DeepSeek 模型（deepseek-chat）。需要在阿里云百炼控制台创建 API Key。';
+      if (descEl) descEl.textContent = `使用阿里云百炼平台的 DeepSeek 模型（${preset?.model || 'deepseek-v3.2'}）。需要在阿里云百炼控制台创建 API Key。`;
     } else {
       // custom
       baseUrlGroup?.classList.remove('hidden');
@@ -1145,8 +1145,9 @@ const App = {
       s.apiBaseUrl = GITHUB_AI_BASE_URL;
       s.apiModel   = GITHUB_AI_MODEL;
     } else if (provider === 'aliyun') {
-      s.apiBaseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-      s.apiModel   = 'deepseek-chat';
+      const aliyunPreset = (typeof AI_PRESETS !== 'undefined') ? AI_PRESETS.aliyun : null;
+      s.apiBaseUrl = aliyunPreset?.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+      s.apiModel   = aliyunPreset?.model   || 'deepseek-v3.2';
     } else {
       // custom
       s.apiBaseUrl = document.getElementById('apiBaseUrlInput')?.value.trim() || '';
