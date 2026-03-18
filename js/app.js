@@ -692,7 +692,6 @@ const App = {
     document.getElementById('medUnit').value    = '片';
     document.getElementById('medNotes').value   = '';
     document.getElementById('medQuantity').value = '0';
-    document.querySelectorAll('.med-time').forEach((cb) => (cb.checked = false));
     document.getElementById('customTimes').innerHTML = '';
 
     // Populate patient selector
@@ -719,16 +718,13 @@ const App = {
           patSel.value = med.userId;
         }
 
-        const defaultTimes = ['07:00','12:00','18:00','22:00'];
         for (const t of (med.times || [])) {
-          const cb = document.querySelector(`.med-time[value="${t}"]`);
-          if (cb) {
-            cb.checked = true;
-          } else {
-            this.addCustomTimeRow(t);
-          }
+          this.addCustomTimeRow(t);
         }
       }
+    } else {
+      // Pre-populate with common default times for convenience
+      ['07:00', '12:00', '18:00'].forEach((t) => this.addCustomTimeRow(t));
     }
 
     // Sync unit label (bound once here, not on every modal open)
@@ -744,16 +740,42 @@ const App = {
     document.getElementById('modalOverlay').classList.add('hidden');
   },
 
-  addCustomTimeRow(value = '') {
+  /** Build <option> elements for every half-hour of the day (00:00, 00:30, … 23:30).
+   *  `value` is rounded to the nearest :00 or :30 and pre-selected. */
+  _buildTimeOptions(value = '08:00') {
+    const parts = (value || '').split(':');
+    let h = parseInt(parts[0] || '8', 10);
+    const m = parseInt(parts[1] || '0', 10);
+    // Round to nearest 30 minutes with hour rollover
+    let snapM;
+    if (m < 15) {
+      snapM = 0;
+    } else if (m < 45) {
+      snapM = 30;
+    } else {
+      snapM = 0;
+      h = (h + 1) % 24;
+    }
+    const selected = `${String(h).padStart(2, '0')}:${String(snapM).padStart(2, '0')}`;
+    let html = '';
+    for (let hour = 0; hour < 24; hour++) {
+      for (const min of [0, 30]) {
+        const val = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        html += `<option value="${val}"${val === selected ? ' selected' : ''}>${val}</option>`;
+      }
+    }
+    return html;
+  },
+
+  addCustomTimeRow(value = '08:00') {
     const container = document.getElementById('customTimes');
     const rowId = genId();
     const row = document.createElement('div');
     row.className = 'custom-time-row';
     row.dataset.rowId = rowId;
     row.innerHTML = `
-      <input type="time" class="custom-time-input" value="${value}"
-             style="flex:1;padding:12px 14px;font-size:1.1rem;border:2px solid var(--border);border-radius:8px">
-      <button class="btn-remove-time" data-row-id="${rowId}">✕</button>
+      <select class="custom-time-input">${this._buildTimeOptions(value)}</select>
+      <button class="btn-remove-time" data-row-id="${rowId}" title="删除该时间" aria-label="删除该时间">✕</button>
     `;
     row.querySelector('.btn-remove-time').addEventListener('click', () => row.remove());
     container.appendChild(row);
@@ -769,14 +791,13 @@ const App = {
     const quantity = parseInt(document.getElementById('medQuantity').value) || 0;
     const userId   = document.getElementById('medPatient').value;
 
-    // Collect times
-    const times = [];
-    document.querySelectorAll('.med-time:checked').forEach((cb) => times.push(cb.value));
+    // Collect times, de-duplicating via Set
+    const timesRaw = [];
     document.querySelectorAll('.custom-time-input').forEach((inp) => {
-      if (inp.value) times.push(inp.value);
+      if (inp.value) timesRaw.push(inp.value);
     });
-    if (times.length === 0) { showToast('请至少选择一个服药时间', 'warn'); return; }
-    times.sort();
+    const times = [...new Set(timesRaw)].sort();
+    if (times.length === 0) { showToast('请至少添加一个服药时间', 'warn'); return; }
 
     const isNew = !this.state.editingMedId;
     const med = isNew
@@ -858,16 +879,10 @@ const App = {
         document.getElementById('medQuantityUnit').textContent = result.unit || '片';
 
         // Set times
-        document.querySelectorAll('.med-time').forEach((cb) => (cb.checked = false));
         document.getElementById('customTimes').innerHTML = '';
         if (result.times?.length) {
           for (const t of result.times) {
-            const cb = document.querySelector(`.med-time[value="${t}"]`);
-            if (cb) {
-              cb.checked = true;
-            } else {
-              this.addCustomTimeRow(t);
-            }
+            this.addCustomTimeRow(t);
           }
         }
         showToast('药单解析成功', 'success');
