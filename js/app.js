@@ -1544,10 +1544,14 @@ const App = {
           ta.value = code;
           ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
           document.body.appendChild(ta);
-          ta.focus();
-          ta.select();
-          const ok = document.execCommand('copy');
-          document.body.removeChild(ta);
+          let ok = false;
+          try {
+            ta.focus();
+            ta.select();
+            ok = document.execCommand('copy');
+          } finally {
+            document.body.removeChild(ta);
+          }
           if (ok) {
             showToast('家庭代码已复制 ✓', 'success');
           } else {
@@ -1643,8 +1647,16 @@ function genId() {
 function genFamilyCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const buf = new Uint8Array(6);
+    crypto.getRandomValues(buf);
+    for (let i = 0; i < 6; i++) {
+      code += chars[buf[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
   }
   return code;
 }
