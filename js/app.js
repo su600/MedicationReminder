@@ -851,6 +851,27 @@ const App = {
     return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
   },
 
+  /**
+   * Snap a normalised "HH:MM" string to the nearest 30-minute boundary
+   * (:00 or :30), matching what the UI <select> options offer.
+   */
+  _snapTime(t) {
+    if (!t) return t;
+    const [hStr, mStr] = t.split(':');
+    let h = parseInt(hStr, 10);
+    const min = parseInt(mStr, 10);
+    let snapM;
+    if (min < 15) {
+      snapM = 0;
+    } else if (min < 45) {
+      snapM = 30;
+    } else {
+      snapM = 0;
+      h = (h + 1) % 24;
+    }
+    return `${String(h).padStart(2, '0')}:${String(snapM).padStart(2, '0')}`;
+  },
+
   async parseAiInput() {
     const text = document.getElementById('aiInput').value.trim();
     if (!text) { showToast('请先输入药单描述', 'warn'); return; }
@@ -866,35 +887,47 @@ const App = {
         apiModel:   this.state.settings.apiModel
       });
 
+      const userId = document.getElementById('medPatient').value;
+
       if (results.length === 0) {
         showToast('未识别到任何药品，请检查输入内容', 'warn');
       } else if (results.length === 1) {
-        // Single medication: fill the form as before so the user can review and save
+        // Single medication: save directly to the database (same as the multi-medication path)
         const result = results[0];
-        if (result.name) document.getElementById('medName').value = result.name;
-        if (result.dose) document.getElementById('medDose').value = result.dose;
-        if (result.unit) document.getElementById('medUnit').value = result.unit;
-        if (result.quantity) document.getElementById('medQuantity').value = result.quantity;
-        if (result.notes) document.getElementById('medNotes').value = result.notes;
-        document.getElementById('medQuantityUnit').textContent = result.unit || '片';
-
-        // Set times
-        document.getElementById('customTimes').innerHTML = '';
-        if (result.times?.length) {
-          for (const t of result.times) {
-            this.addCustomTimeRow(t);
-          }
+        if (!result.name) {
+          showToast('未识别到任何有效药品，请检查输入内容', 'warn');
+        } else {
+          const rawTimes = Array.isArray(result.times) ? result.times : [];
+          const times = [...new Set(rawTimes.map((t) => this._normTime(t)).filter(Boolean).map((t) => this._snapTime(t)))].sort();
+          const med = {
+            id:        genId(),
+            userId,
+            createdAt: Date.now(),
+            name:      result.name,
+            dose:      parseFloat(result.dose) || 1,
+            unit:      result.unit || '片',
+            times:     times.length ? times : ['08:00'],
+            quantity:  parseInt(result.quantity) || 0,
+            notes:     result.notes || '',
+            active:    true,
+          };
+          await DB.saveMedication(med);
+          this.state.medications.push(med);
+          await this.ensureTodayRecords();
+          this.renderAll();
+          this.scheduleNotifications();
+          this.checkLowStock();
+          this.closeMedicationModal();
+          showToast('药单解析成功，已添加药品', 'success');
         }
-        showToast('药单解析成功', 'success');
       } else {
         // Multiple medications: batch-add them all to the database
-        const userId = document.getElementById('medPatient').value;
         let added = 0;
         for (const result of results) {
           if (!result.name) continue;
-          // Normalise times: convert to strict HH:MM, discard invalid tokens, default to 08:00
+          // Normalise times: convert to strict HH:MM, snap to nearest 30-min boundary, de-duplicate, default to 08:00
           const rawTimes = Array.isArray(result.times) ? result.times : [];
-          const times = rawTimes.map((t) => this._normTime(t)).filter(Boolean).sort(); // lexicographic sort works for HH:MM
+          const times = [...new Set(rawTimes.map((t) => this._normTime(t)).filter(Boolean).map((t) => this._snapTime(t)))].sort();
           const med = {
             id:        genId(),
             userId,
