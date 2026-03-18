@@ -15,7 +15,7 @@
 
 ### 功能特性
 
-- **智能用药提醒**：根据药单自动生成每日用药计划，在服药时间前推送通知；支持设置提前提醒时长，也可稍后提醒（Snooze）。
+- **智能用药提醒**：根据药单自动生成每日用药计划，在服药时间前推送通知；支持设置提前提醒时长。Push 通知（Service Worker）还提供「15分钟后提醒」（Snooze）操作。
 - **一键打勾确认**：每次服药后可勾选确认，清晰记录当天用药情况。
 - **药品数量追踪**：记录药品剩余数量，提前一周在库存不足时自动提醒补充。
 - **AI 药单解析**：支持多种 AI 服务商（GitHub Copilot、阿里云百炼 DeepSeek、自定义 OpenAI 兼容接口），用自然语言描述药单，自动解析生成用药计划（需配置 API Key）。无 API Key 时自动回退到内置规则解析。
@@ -24,7 +24,7 @@
 - **多用户支持**：支持添加多个用户，角色分为「患者本人」和「家庭成员」：
   - **患者**：接收服药提醒推送。
   - **家庭成员**：可查看患者用药情况，关爱家人健康。
-- **家庭共享**：通过家庭代码关联家庭成员账户，方便家人协同管理，同一家庭共享 AI Token。
+- **家庭共享**：通过家庭代码关联家庭成员账户，方便家人协同管理。API Key 保存在本设备/浏览器中，同设备所有用户共享，不随家庭代码跨设备同步。
 - **离线可用**：基于 Service Worker 缓存，断网后仍可正常使用。
 
 ### AI 功能配置
@@ -35,7 +35,7 @@
 |--------|----------|------|
 | GitHub Copilot（默认）| gemini-3-flash | 使用 GitHub Models API，需要 GitHub PAT |
 | 阿里云百炼 – DeepSeek | deepseek-v3.2 | 需要阿里云 API Key |
-| 自定义 OpenAI 兼容接口 | 自定义 | 填写 Base URL 和模型名称 |
+| 自定义 OpenAI 兼容接口 | 用户自定义 | 填写 Base URL 和模型名称 |
 
 未配置 API Key 时，AI 药单解析将自动回退到内置中文规则解析器。
 
@@ -46,7 +46,7 @@
 | HTML / CSS / JavaScript | 纯前端实现，无需构建工具 |
 | PWA (Service Worker + Web App Manifest) | 支持离线使用和桌面安装 |
 | IndexedDB | 本地数据持久化存储 |
-| Web Notifications API | 系统级推送提醒（含稍后提醒 Snooze） |
+| Web Notifications API | 系统级推送提醒（Snooze 稍后提醒仅限 Service Worker Push 通知操作）|
 | OpenAI 兼容 API（可选）| AI 自然语言药单解析 & 用药咨询 |
 
 ### Docker 部署
@@ -103,7 +103,7 @@ MedicationReminder/
 
 ### Features
 
-- **Smart Medication Reminders**: Automatically generates a daily medication schedule from your prescription and sends push notifications before each dose. Supports configurable advance reminder time and a Snooze option.
+- **Smart Medication Reminders**: Automatically generates a daily medication schedule from your prescription and sends push notifications before each dose. Supports configurable advance reminder time. Push notifications (via Service Worker) include a "Snooze 15 min" action button.
 - **One-tap Dose Confirmation**: Check off each dose after taking it to keep a clear record of your daily medication.
 - **Inventory Tracking**: Tracks remaining medication quantities and sends a low-stock alert one week before running out.
 - **AI Prescription Parsing**: Supports multiple AI providers (GitHub Copilot, Aliyun Bailian DeepSeek, or any custom OpenAI-compatible endpoint) to parse natural-language prescription descriptions and auto-fill medication details (requires API key configuration). Falls back to a built-in rule-based parser when no API key is present.
@@ -112,18 +112,18 @@ MedicationReminder/
 - **Multi-user Support**: Add multiple users with two roles:
   - **Patient**: Receives medication reminder notifications.
   - **Family Member**: Can view the patient's medication status to help monitor their health.
-- **Family Sharing**: Link family members' accounts using a shared family code for coordinated management; the AI token is shared within the same family.
+- **Family Sharing**: Link family members' accounts using a shared family code for coordinated management. The API key is stored locally in the browser on each device; it is shared among all users on the same device but is not synced across devices via the family code.
 - **Offline-ready**: Service Worker caching ensures the app works without an internet connection.
 
 ### AI Configuration
 
-Enable AI in **Settings → AI Features**, then tap **API Configuration** to select a provider:
+Enable AI in **Settings (设置) → AI 智能功能**, then tap **API 配置** to select a provider:
 
 | Provider | Default Model | Notes |
 |----------|--------------|-------|
 | GitHub Copilot (default) | gemini-3-flash | Uses GitHub Models API; requires a GitHub PAT |
 | Aliyun Bailian – DeepSeek | deepseek-v3.2 | Requires an Aliyun API key |
-| Custom OpenAI-compatible | custom | Enter your own Base URL and model name |
+| Custom OpenAI-compatible | User-defined | Enter your own Base URL and model name |
 
 Without an API key, AI prescription parsing automatically falls back to the built-in Chinese rule-based parser.
 
@@ -134,7 +134,7 @@ Without an API key, AI prescription parsing automatically falls back to the buil
 | HTML / CSS / JavaScript | Pure frontend, no build tools required |
 | PWA (Service Worker + Web App Manifest) | Offline support and home screen installation |
 | IndexedDB | Client-side persistent data storage |
-| Web Notifications API | System-level push reminders with Snooze support |
+| Web Notifications API | System-level push reminders (Snooze available via Service Worker push actions) |
 | OpenAI-compatible API (optional) | AI-powered prescription parsing & medication chat |
 
 ### Docker Deployment
@@ -156,7 +156,7 @@ Then open `http://localhost:8080` in your browser to access the app.
 3. Go to the **Medications** tab and tap **＋** to add medications — fill in the form manually or use AI parsing.
 4. Return to the **Today** tab and check off each dose after taking it.
 5. Enable notification permissions in **Settings** to receive automatic push reminders; configure the advance reminder time as needed.
-6. (Optional) Enable AI in **Settings → AI Features** and configure an API key to use AI prescription parsing and the medication chat assistant.
+6. (Optional) Enable AI in **Settings (设置) → AI 智能功能** and configure an API key to use AI prescription parsing and the medication chat assistant.
 
 ### Install as a Desktop / Mobile App (PWA)
 
