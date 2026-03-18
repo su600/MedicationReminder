@@ -717,12 +717,17 @@ const App = {
         if (patSel.querySelector(`option[value="${med.userId}"]`)) {
           patSel.value = med.userId;
         }
+        // Disable patient selector in edit mode: reassigning a medication to a
+        // different patient would require migrating its history records and is
+        // not supported via this form.
+        patSel.disabled = true;
 
         for (const t of (med.times || [])) {
           this.addCustomTimeRow(t);
         }
       }
     } else {
+      patSel.disabled = false;
       // Pre-populate with common default times for convenience
       ['07:00', '12:00', '18:00'].forEach((t) => this.addCustomTimeRow(t));
     }
@@ -881,6 +886,10 @@ const App = {
     const text = document.getElementById('aiInput').value.trim();
     if (!text) { showToast('请先输入药单描述', 'warn'); return; }
 
+    // Fail fast: resolve patient before the (potentially costly) AI call
+    const userId = document.getElementById('medPatient').value || this.state.viewedPatient?.id || '';
+    if (!userId) { showToast('请先选择患者', 'warn'); return; }
+
     const parseBtn = document.getElementById('parseAiBtn');
     parseBtn.disabled = true;
     parseBtn.textContent = '解析中…';
@@ -891,12 +900,6 @@ const App = {
         apiKey:     this.state.settings.apiKey,
         apiModel:   this.state.settings.apiModel
       });
-
-      const userId = document.getElementById('medPatient').value || this.state.viewedPatient?.id || '';
-      if (!userId) {
-        showToast('请先选择患者', 'warn');
-        return;
-      }
 
       if (results.length === 0) {
         showToast('未识别到任何药品，请检查输入内容', 'warn');
