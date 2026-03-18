@@ -851,6 +851,27 @@ const App = {
     return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
   },
 
+  /**
+   * Snap a normalised "HH:MM" string to the nearest 30-minute boundary
+   * (:00 or :30), matching what the UI <select> options offer.
+   */
+  _snapTime(t) {
+    if (!t) return t;
+    const [hStr, mStr] = t.split(':');
+    let h = parseInt(hStr, 10);
+    const min = parseInt(mStr, 10);
+    let snapM;
+    if (min < 15) {
+      snapM = 0;
+    } else if (min < 45) {
+      snapM = 30;
+    } else {
+      snapM = 0;
+      h = (h + 1) % 24;
+    }
+    return `${String(h).padStart(2, '0')}:${String(snapM).padStart(2, '0')}`;
+  },
+
   async parseAiInput() {
     const text = document.getElementById('aiInput').value.trim();
     if (!text) { showToast('请先输入药单描述', 'warn'); return; }
@@ -877,7 +898,7 @@ const App = {
           showToast('未识别到任何有效药品，请检查输入内容', 'warn');
         } else {
           const rawTimes = Array.isArray(result.times) ? result.times : [];
-          const times = rawTimes.map((t) => this._normTime(t)).filter(Boolean).sort();
+          const times = [...new Set(rawTimes.map((t) => this._normTime(t)).filter(Boolean).map((t) => this._snapTime(t)))].sort();
           const med = {
             id:        genId(),
             userId,
@@ -904,9 +925,9 @@ const App = {
         let added = 0;
         for (const result of results) {
           if (!result.name) continue;
-          // Normalise times: convert to strict HH:MM, discard invalid tokens, default to 08:00
+          // Normalise times: convert to strict HH:MM, snap to nearest 30-min boundary, de-duplicate, default to 08:00
           const rawTimes = Array.isArray(result.times) ? result.times : [];
-          const times = rawTimes.map((t) => this._normTime(t)).filter(Boolean).sort(); // lexicographic sort works for HH:MM
+          const times = [...new Set(rawTimes.map((t) => this._normTime(t)).filter(Boolean).map((t) => this._snapTime(t)))].sort();
           const med = {
             id:        genId(),
             userId,
