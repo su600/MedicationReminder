@@ -692,7 +692,6 @@ const App = {
     document.getElementById('medUnit').value    = '片';
     document.getElementById('medNotes').value   = '';
     document.getElementById('medQuantity').value = '0';
-    document.querySelectorAll('.med-time').forEach((cb) => (cb.checked = false));
     document.getElementById('customTimes').innerHTML = '';
 
     // Populate patient selector
@@ -719,16 +718,13 @@ const App = {
           patSel.value = med.userId;
         }
 
-        const defaultTimes = ['07:00','12:00','18:00','22:00'];
         for (const t of (med.times || [])) {
-          const cb = document.querySelector(`.med-time[value="${t}"]`);
-          if (cb) {
-            cb.checked = true;
-          } else {
-            this.addCustomTimeRow(t);
-          }
+          this.addCustomTimeRow(t);
         }
       }
+    } else {
+      // Pre-populate with common default times for convenience
+      ['07:00', '12:00', '18:00'].forEach((t) => this.addCustomTimeRow(t));
     }
 
     // Sync unit label (bound once here, not on every modal open)
@@ -744,15 +740,32 @@ const App = {
     document.getElementById('modalOverlay').classList.add('hidden');
   },
 
-  addCustomTimeRow(value = '') {
+  /** Build <option> elements for every half-hour of the day (00:00, 00:30, … 23:30).
+   *  `value` is snapped to the nearest :00 or :30 and pre-selected. */
+  _buildTimeOptions(value = '08:00') {
+    const parts = (value || '').split(':');
+    const h = parseInt(parts[0] || '8', 10);
+    const m = parseInt(parts[1] || '0', 10);
+    const snapM = m >= 30 ? 30 : 0;
+    const selected = `${String(h).padStart(2, '0')}:${String(snapM).padStart(2, '0')}`;
+    let html = '';
+    for (let hour = 0; hour < 24; hour++) {
+      for (const min of [0, 30]) {
+        const val = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        html += `<option value="${val}"${val === selected ? ' selected' : ''}>${val}</option>`;
+      }
+    }
+    return html;
+  },
+
+  addCustomTimeRow(value = '08:00') {
     const container = document.getElementById('customTimes');
     const rowId = genId();
     const row = document.createElement('div');
     row.className = 'custom-time-row';
     row.dataset.rowId = rowId;
     row.innerHTML = `
-      <input type="time" class="custom-time-input" value="${value}"
-             style="flex:1;padding:12px 14px;font-size:1.1rem;border:2px solid var(--border);border-radius:8px">
+      <select class="custom-time-input">${this._buildTimeOptions(value)}</select>
       <button class="btn-remove-time" data-row-id="${rowId}">✕</button>
     `;
     row.querySelector('.btn-remove-time').addEventListener('click', () => row.remove());
@@ -771,11 +784,10 @@ const App = {
 
     // Collect times
     const times = [];
-    document.querySelectorAll('.med-time:checked').forEach((cb) => times.push(cb.value));
     document.querySelectorAll('.custom-time-input').forEach((inp) => {
       if (inp.value) times.push(inp.value);
     });
-    if (times.length === 0) { showToast('请至少选择一个服药时间', 'warn'); return; }
+    if (times.length === 0) { showToast('请至少添加一个服药时间', 'warn'); return; }
     times.sort();
 
     const isNew = !this.state.editingMedId;
@@ -858,16 +870,10 @@ const App = {
         document.getElementById('medQuantityUnit').textContent = result.unit || '片';
 
         // Set times
-        document.querySelectorAll('.med-time').forEach((cb) => (cb.checked = false));
         document.getElementById('customTimes').innerHTML = '';
         if (result.times?.length) {
           for (const t of result.times) {
-            const cb = document.querySelector(`.med-time[value="${t}"]`);
-            if (cb) {
-              cb.checked = true;
-            } else {
-              this.addCustomTimeRow(t);
-            }
+            this.addCustomTimeRow(t);
           }
         }
         showToast('药单解析成功', 'success');
