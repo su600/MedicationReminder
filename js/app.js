@@ -1546,12 +1546,37 @@ const App = {
     document.getElementById('saveJoinFamilyBtn')?.addEventListener('click', () => this.saveJoinFamily());
 
     // Copy family code
-    document.getElementById('copyFamilyCodeBtn')?.addEventListener('click', () => {
+    document.getElementById('copyFamilyCodeBtn')?.addEventListener('click', async () => {
       const code = this.state.activeUser?.familyCode;
       if (!code) return;
-      navigator.clipboard?.writeText(code)
-        .then(() => showToast('家庭代码已复制 ✓', 'success'))
-        .catch(() => showToast('复制失败，请手动复制：' + code, 'warn'));
+      try {
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(code);
+          showToast('家庭代码已复制 ✓', 'success');
+        } else {
+          // Fallback for non-HTTPS environments
+          const ta = document.createElement('textarea');
+          ta.value = code;
+          ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+          document.body.appendChild(ta);
+          let ok = false;
+          try {
+            ta.focus();
+            ta.select();
+            ok = document.execCommand('copy');
+          } finally {
+            document.body.removeChild(ta);
+          }
+          if (ok) {
+            showToast('家庭代码已复制 ✓', 'success');
+          } else {
+            showToast('复制失败，请手动复制：' + code, 'warn');
+          }
+        }
+      } catch (err) {
+        console.error('Copy failed:', err);
+        showToast('复制失败，请手动复制：' + code, 'warn');
+      }
     });
 
     // Settings toggles (save on change)
@@ -1635,7 +1660,20 @@ function genId() {
 }
 
 function genFamilyCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const buf = new Uint8Array(6);
+    crypto.getRandomValues(buf);
+    for (let i = 0; i < 6; i++) {
+      code += chars[buf[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+  }
+  return code;
 }
 
 function todayStr() {
