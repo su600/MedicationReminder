@@ -8,9 +8,8 @@
 
 /* ── Fixed GitHub Copilot / GitHub Models configuration ── */
 const GITHUB_AI_BASE_URL = 'https://models.inference.ai.azure.com';
-/* Using gpt-4o-mini via GitHub Models (update to a Gemini model name when
-   Google models become available on GitHub Models marketplace) */
-const GITHUB_AI_MODEL    = 'gpt-4o-mini';
+/* Using gemini-3-flash via GitHub Models */
+const GITHUB_AI_MODEL    = 'gemini-3-flash';
 
 const AI = {
   /**
