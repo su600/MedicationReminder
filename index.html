@@ -453,8 +453,8 @@
     </p>
     <div class="form-group">
       <label>家庭代码</label>
-      <input type="text" id="joinFamilyModalInput" placeholder="输入6位家庭代码"
-             maxlength="8" autocomplete="off" style="text-transform:uppercase">
+      <input type="text" id="joinFamilyModalInput" placeholder="输入家庭代码（如 ABC123）"
+             maxlength="6" autocomplete="off" style="text-transform:uppercase">
     </div>
   </div>
   <div class="modal-footer">
@@ -467,7 +467,7 @@
 <!-- ═══════════════════════════════════════
      AI CHAT PANEL
      ═══════════════════════════════════════ -->
-<div class="chat-panel hidden" id="chatPanel" role="dialog" aria-label="AI 用药助手">
+<div class="chat-panel hidden" id="chatPanel" role="dialog" aria-modal="true" aria-label="AI 用药助手">
   <div class="chat-panel-header">
     <div class="chat-header-info">
       <span class="chat-bot-avatar">🤖</span>

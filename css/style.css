@@ -1190,8 +1190,9 @@ body {
   display: flex;
   flex-direction: column;
   box-shadow: 0 -6px 32px rgba(0,0,0,0.2);
-  animation: slideUp 0.25s ease;
+  animation: chatSlideUp 0.25s ease;
 }
+@keyframes chatSlideUp { from { transform:translateY(100%); } to { transform:translateY(0); } }
 .chat-panel-header {
   display: flex;
   align-items: center;
@@ -1341,5 +1342,6 @@ body {
 
 @media (min-width: 480px) {
   .chat-panel { left: auto; right: auto; max-width: 480px; left: 50%; transform: translateX(-50%); border-radius: var(--radius); }
+  @keyframes chatSlideUp { from { opacity:0; transform:translate(-50%, 40px); } to { opacity:1; transform:translate(-50%, 0); } }
   .chat-fab { right: calc(50% - 240px + 20px); }
 }

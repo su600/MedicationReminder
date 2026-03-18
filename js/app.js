@@ -1079,6 +1079,9 @@ const App = {
 
   async saveApiKey() {
     this.state.settings.apiKey = document.getElementById('apiKeyInput').value.trim();
+    // Normalise legacy OpenAI-compatible fields so settings never drift
+    this.state.settings.apiBaseUrl = GITHUB_AI_BASE_URL;
+    this.state.settings.apiModel   = GITHUB_AI_MODEL;
     await DB.saveSettings(this.state.settings);
     this._updateChatFabVisibility();
     this.closeApiKeyModal();
@@ -1120,6 +1123,11 @@ const App = {
     } else if (activeUser.role === 'patient') {
       this.state.viewedPatient = activeUser;
       await this.loadTodayData();
+    } else {
+      // Family-role user joined a family that has no patients on this device yet
+      this.state.viewedPatient = null;
+      this.state.medications = [];
+      this.state.records = [];
     }
 
     this.renderAll();
@@ -1141,19 +1149,26 @@ const App = {
     if (!panel) return;
     this.state.chat.open = true;
     panel.classList.remove('hidden');
+    panel.setAttribute('aria-modal', 'true');
+    // Trap background content from assistive-tech while panel is open
+    document.getElementById('mainApp')?.setAttribute('aria-hidden', 'true');
     if (this.state.chat.history.length === 0) {
       this._appendChatMessage('bot',
         '您好！我是 AI 用药助手，基于 GitHub Copilot 驱动。\n您可以问我药品介绍、注意事项，或随便聊聊 😊');
     }
     this._renderChatQuickActions();
     this._scrollChatToBottom();
+    // Move focus into the panel
     document.getElementById('chatInput')?.focus();
   },
 
   closeChatPanel() {
     const panel = document.getElementById('chatPanel');
     if (panel) panel.classList.add('hidden');
+    document.getElementById('mainApp')?.removeAttribute('aria-hidden');
     this.state.chat.open = false;
+    // Return focus to the FAB that opened the panel
+    document.getElementById('chatFab')?.focus();
   },
 
   _appendChatMessage(role, content) {
@@ -1252,9 +1267,12 @@ const App = {
     const typingEl = this._showChatTyping();
 
     try {
+      // Cap history to the last 20 messages (~10 turns) to avoid context overflow
+      const MAX_HISTORY = 20;
+      const trimmedHistory = this.state.chat.history.slice(-MAX_HISTORY);
       const messages = [
         { role: 'system', content: this._buildChatSystemPrompt() },
-        ...this.state.chat.history
+        ...trimmedHistory
       ];
       const reply = await AI.chat(messages, this.state.settings.apiKey);
       typingEl?.remove();
