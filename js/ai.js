@@ -1,9 +1,16 @@
 /**
- * ai.js – Natural language medication parser for 用药助手
+ * ai.js – Natural language medication parser and AI chat for 用药助手
  *
- * If an OpenAI-compatible API key is configured, it calls the API.
- * Otherwise it falls back to a rule-based Chinese/English parser.
+ * Provider: GitHub Copilot (GitHub Models API)
+ * Model: fixed to GITHUB_AI_MODEL constant
+ * Falls back to rule-based parser when no API key is present.
  */
+
+/* ── Fixed GitHub Copilot / GitHub Models configuration ── */
+const GITHUB_AI_BASE_URL = 'https://models.inference.ai.azure.com';
+/* Using gpt-4o-mini via GitHub Models (update to a Gemini model name when
+   Google models become available on GitHub Models marketplace) */
+const GITHUB_AI_MODEL    = 'gpt-4o-mini';
 
 const AI = {
   /**
@@ -24,10 +31,43 @@ const AI = {
     return AI._ruleBased(text);
   },
 
-  /* ── LLM via OpenAI-compatible API ── */
+  /**
+   * Multi-turn chat with the AI model.
+   * @param {Array<{role:string, content:string}>} messages – conversation history
+   * @param {string} apiKey – GitHub Copilot / GitHub Models PAT
+   * @returns {Promise<string>} assistant reply
+   */
+  async chat(messages, apiKey) {
+    if (!apiKey || !apiKey.trim()) {
+      throw new Error('请先在设置中配置 GitHub Token');
+    }
+    const resp = await fetch(`${GITHUB_AI_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model:       GITHUB_AI_MODEL,
+        messages,
+        temperature: 0.7,
+        max_tokens:  800
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`API ${resp.status}: ${err}`);
+    }
+
+    const json = await resp.json();
+    return json.choices?.[0]?.message?.content || '';
+  },
+
+  /* ── LLM via GitHub Models (fixed endpoint + model) ── */
   async _callLLM(text, cfg) {
-    const baseUrl = (cfg.apiBaseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
-    const model   = cfg.apiModel || 'gpt-3.5-turbo';
+    const baseUrl = GITHUB_AI_BASE_URL;
+    const model   = GITHUB_AI_MODEL;
 
     const systemPrompt = `你是一个药品信息提取助手。从用户输入的自然语言药单中提取结构化信息，返回 JSON 格式。
 JSON 字段说明：
