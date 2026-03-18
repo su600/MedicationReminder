@@ -21,7 +21,7 @@ const AI_PRESETS = {
   aliyun: {
     label:   '阿里云百炼 (DeepSeek)',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model:   'deepseek-chat'
+    model:   'deepseek-v3.2'
   },
   custom: {
     label:   '自定义 OpenAI 兼容接口',
