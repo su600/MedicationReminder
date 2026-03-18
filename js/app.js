@@ -866,29 +866,41 @@ const App = {
         apiModel:   this.state.settings.apiModel
       });
 
+      const userId = document.getElementById('medPatient').value;
+
       if (results.length === 0) {
         showToast('未识别到任何药品，请检查输入内容', 'warn');
       } else if (results.length === 1) {
-        // Single medication: fill the form as before so the user can review and save
+        // Single medication: save directly to the database (same as the multi-medication path)
         const result = results[0];
-        if (result.name) document.getElementById('medName').value = result.name;
-        if (result.dose) document.getElementById('medDose').value = result.dose;
-        if (result.unit) document.getElementById('medUnit').value = result.unit;
-        if (result.quantity) document.getElementById('medQuantity').value = result.quantity;
-        if (result.notes) document.getElementById('medNotes').value = result.notes;
-        document.getElementById('medQuantityUnit').textContent = result.unit || '片';
-
-        // Set times
-        document.getElementById('customTimes').innerHTML = '';
-        if (result.times?.length) {
-          for (const t of result.times) {
-            this.addCustomTimeRow(t);
-          }
+        if (!result.name) {
+          showToast('未识别到任何有效药品，请检查输入内容', 'warn');
+        } else {
+          const rawTimes = Array.isArray(result.times) ? result.times : [];
+          const times = rawTimes.map((t) => this._normTime(t)).filter(Boolean).sort();
+          const med = {
+            id:        genId(),
+            userId,
+            createdAt: Date.now(),
+            name:      result.name,
+            dose:      parseFloat(result.dose) || 1,
+            unit:      result.unit || '片',
+            times:     times.length ? times : ['08:00'],
+            quantity:  parseInt(result.quantity) || 0,
+            notes:     result.notes || '',
+            active:    true,
+          };
+          await DB.saveMedication(med);
+          this.state.medications.push(med);
+          await this.ensureTodayRecords();
+          this.renderAll();
+          this.scheduleNotifications();
+          this.checkLowStock();
+          this.closeMedicationModal();
+          showToast('药单解析成功，已添加药品', 'success');
         }
-        showToast('药单解析成功', 'success');
       } else {
         // Multiple medications: batch-add them all to the database
-        const userId = document.getElementById('medPatient').value;
         let added = 0;
         for (const result of results) {
           if (!result.name) continue;
