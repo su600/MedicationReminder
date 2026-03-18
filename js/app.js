@@ -815,6 +815,21 @@ const App = {
   /* ─────────────────────────────────────────
      AI PARSING
      ───────────────────────────────────────── */
+
+  /**
+   * Normalise an AI-returned time token to strict "HH:MM".
+   * Returns null for anything that cannot be made valid.
+   */
+  _normTime(t) {
+    if (!t || typeof t !== 'string') return null;
+    const s = t.replace('：', ':').trim();
+    const m = s.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (!m) return null;
+    const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+    return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+  },
+
   async parseAiInput() {
     const text = document.getElementById('aiInput').value.trim();
     if (!text) { showToast('请先输入药单描述', 'warn'); return; }
@@ -830,7 +845,9 @@ const App = {
         apiModel:   this.state.settings.apiModel
       });
 
-      if (results.length === 1) {
+      if (results.length === 0) {
+        showToast('未识别到任何药品，请检查输入内容', 'warn');
+      } else if (results.length === 1) {
         // Single medication: fill the form as before so the user can review and save
         const result = results[0];
         if (result.name) document.getElementById('medName').value = result.name;
@@ -860,16 +877,18 @@ const App = {
         let added = 0;
         for (const result of results) {
           if (!result.name) continue;
-          const times = (result.times?.length) ? [...result.times].sort() : ['08:00']; // lexicographic sort works for HH:MM strings
+          // Normalise times: convert to strict HH:MM, discard invalid tokens, default to 08:00
+          const rawTimes = Array.isArray(result.times) ? result.times : [];
+          const times = rawTimes.map((t) => this._normTime(t)).filter(Boolean).sort(); // lexicographic sort works for HH:MM
           const med = {
             id:        genId(),
             userId,
             createdAt: Date.now(),
             name:      result.name,
-            dose:      result.dose || 1,
+            dose:      parseFloat(result.dose) || 1,
             unit:      result.unit || '片',
-            times,
-            quantity:  result.quantity || 0,
+            times:     times.length ? times : ['08:00'],
+            quantity:  parseInt(result.quantity) || 0,
             notes:     result.notes || '',
             active:    true
           };
@@ -877,12 +896,16 @@ const App = {
           this.state.medications.push(med);
           added++;
         }
-        await this.ensureTodayRecords();
-        this.renderAll();
-        this.scheduleNotifications();
-        this.checkLowStock();
-        this.closeMedicationModal();
-        showToast(`已成功解析并添加 ${added} 种药品`, 'success');
+        if (added === 0) {
+          showToast('未识别到任何有效药品，请检查输入内容', 'warn');
+        } else {
+          await this.ensureTodayRecords();
+          this.renderAll();
+          this.scheduleNotifications();
+          this.checkLowStock();
+          this.closeMedicationModal();
+          showToast(`已成功解析并添加 ${added} 种药品`, 'success');
+        }
       }
     } catch (err) {
       showToast('解析失败：' + err.message, 'error');

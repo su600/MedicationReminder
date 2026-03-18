@@ -98,7 +98,8 @@ const AI = {
 - quantity: 现有总数量（数字，没有则为 0）
 - notes: 备注说明（字符串，如特殊用法、减量方案等）
 
-常见时间映射：早上/早餐→07:00，中午/午餐→12:00，晚上/晚餐→18:00，睡前→22:00，每天三次→["07:00","12:00","18:00"]，每天两次→["08:00","20:00"]，每天一次→["08:00"]，隔日一次→["08:00"]（备注中注明隔日服用）。
+常见时间映射：早上/早餐→07:00，中午/午餐→12:00，晚上/晚餐→18:00，睡前→22:00，每天三次→["07:00","12:00","18:00"]，每天两次→["08:00","20:00"]，每天一次→["08:00"]。
+对于非每日频率（如隔日一次、每3天一次、每周一次等），times 字段必须设为空数组 []，并在 notes 中完整描述用药频率（如"隔日口服"、"每3天服用1次"）。
 
 重要：药单中有多少种药品就提取多少个对象，不得遗漏任何一种。只返回 JSON 数组，不要任何解释。示例：[{"name":"药品A","dose":1,"unit":"片","times":["08:00"],"quantity":0,"notes":""}]`;
 
@@ -126,10 +127,29 @@ const AI = {
 
     const json = await resp.json();
     const content = json.choices?.[0]?.message?.content || '';
-    // Extract JSON from the response (strip markdown code blocks if present)
-    const arrayMatch = content.match(/\[[\s\S]*\]/);
-    const objMatch   = content.match(/\{[\s\S]*\}/);
-    const rawJson    = arrayMatch ? arrayMatch[0] : (objMatch ? objMatch[0] : null);
+    // Extract JSON from the response:
+    // 1. Prefer content inside a ```json ... ``` code block.
+    // 2. Otherwise, find the outermost [ ... ] or { ... } using bracket-depth tracking
+    //    to avoid greedy regex over-capturing unrelated brackets.
+    let rawJson = null;
+    const codeBlock = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (codeBlock) {
+      rawJson = codeBlock[1].trim();
+    } else {
+      const arrStart = content.indexOf('[');
+      const objStart = content.indexOf('{');
+      const start = (arrStart !== -1 && (objStart === -1 || arrStart < objStart)) ? arrStart : objStart;
+      if (start !== -1) {
+        const openCh  = start === arrStart ? '[' : '{';
+        const closeCh = start === arrStart ? ']' : '}';
+        let depth = 0, end = -1;
+        for (let i = start; i < content.length; i++) {
+          if (content[i] === openCh) depth++;
+          else if (content[i] === closeCh) { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end !== -1) rawJson = content.slice(start, end + 1);
+      }
+    }
     if (!rawJson) throw new Error('AI 未返回可识别的 JSON 格式，请检查 API 配置或手动填写');
     let parsed;
     try {
