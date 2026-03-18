@@ -99,7 +99,8 @@ body {
 .form-group input[type="url"],
 .form-group input[type="time"],
 .form-group select,
-.form-group textarea {
+.form-group textarea,
+.ai-input-section textarea {
   width: 100%;
   padding: 14px 16px;
   font-size: 1.1rem;
@@ -112,7 +113,8 @@ body {
 }
 .form-group input:focus,
 .form-group select:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.ai-input-section textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(21,101,192,0.15);
@@ -910,7 +912,7 @@ body {
   margin-bottom: 8px;
 }
 .ai-input-section label { display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 8px; }
-.ai-input-section textarea { margin-bottom: 10px; min-height: 140px; border-radius: var(--radius); }
+.ai-input-section textarea { margin-bottom: 10px; min-height: 200px; border-radius: var(--radius-sm); }
 .ai-loading { text-align: center; padding: 10px; color: var(--primary); font-size: 0.95rem; }
 
 .or-divider {
