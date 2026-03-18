@@ -49,6 +49,27 @@
         </div>
       </div>
 
+      <div class="form-group">
+        <label>家庭设置</label>
+        <div class="family-opt-selector">
+          <button class="family-opt-btn active" id="optCreateFamily" data-family="create">
+            <span class="family-opt-icon">🏠</span>
+            <span>创建新家庭</span>
+          </button>
+          <button class="family-opt-btn" id="optJoinFamily" data-family="join">
+            <span class="family-opt-icon">👥</span>
+            <span>加入已有家庭</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group hidden" id="joinFamilyGroup">
+        <label>家庭代码</label>
+        <input type="text" id="joinFamilyCodeInput" placeholder="输入家庭代码（如 ABC123）"
+               maxlength="8" autocomplete="off" style="text-transform:uppercase">
+        <p class="form-hint">由家庭成员共享的唯一代码</p>
+      </div>
+
       <button class="btn-primary btn-large" id="startBtn">开始使用 →</button>
     </div>
   </div>
@@ -161,15 +182,20 @@
         <div class="settings-group">
           <div class="settings-group-title">AI 智能功能</div>
           <div class="settings-item">
-            <span>AI 药单解析</span>
+            <span>AI 药单解析 &amp; 咨询</span>
             <label class="toggle">
               <input type="checkbox" id="aiToggle">
               <span class="toggle-slider"></span>
             </label>
           </div>
           <div class="settings-item hidden" id="aiKeyItem">
-            <span>配置 API</span>
-            <button class="btn-text" id="setApiKeyBtn">设置 →</button>
+            <span>GitHub Token</span>
+            <button class="btn-text" id="setApiKeyBtn">配置 →</button>
+          </div>
+          <div class="settings-item hidden" id="aiProviderItem">
+            <span class="text-muted" style="font-size:0.85rem">
+              供应商：GitHub Copilot · 模型：gpt-4o-mini
+            </span>
           </div>
         </div>
 
@@ -177,12 +203,19 @@
           <div class="settings-group-title">家庭共享</div>
           <div class="settings-item">
             <span>家庭代码</span>
-            <span class="family-code" id="familyCode">—</span>
+            <div class="family-code-row">
+              <span class="family-code" id="familyCode">—</span>
+              <button class="btn-text btn-small" id="copyFamilyCodeBtn" aria-label="复制家庭代码">复制</button>
+            </div>
           </div>
           <div class="settings-item">
             <span class="text-muted" style="font-size:0.9rem">
-              将此代码告诉家人，家人添加用户时使用相同代码即可关联查看
+              将此代码告诉家人，家人注册时输入相同代码即可加入家庭
             </span>
+          </div>
+          <div class="settings-item">
+            <span>加入其他家庭</span>
+            <button class="btn-text" id="joinFamilyBtn">更改 →</button>
           </div>
         </div>
 
@@ -230,6 +263,11 @@
       <span>设置</span>
     </button>
   </nav>
+
+  <!-- ── AI Chat Floating Button ── -->
+  <button class="chat-fab hidden" id="chatFab" aria-label="AI 咨询">
+    <span class="chat-fab-icon">💬</span>
+  </button>
 
 </div><!-- /#mainApp -->
 
@@ -374,31 +412,77 @@
      ═══════════════════════════════════════ -->
 <div class="modal hidden" id="apiKeyModal" role="dialog" aria-labelledby="apiModalTitle" aria-modal="true">
   <div class="modal-header">
-    <h2 id="apiModalTitle">🤖 AI API 设置</h2>
+    <h2 id="apiModalTitle">🤖 AI 配置</h2>
     <button class="btn-close" id="closeApiKeyModal" aria-label="关闭">✕</button>
   </div>
   <div class="modal-body">
-    <p class="text-muted" style="margin-bottom:16px">
-      支持 OpenAI GPT 及兼容接口（如 Azure OpenAI、通义千问等）
+    <div class="ai-provider-badge">
+      <span class="provider-logo">🐙</span>
+      <div>
+        <div class="provider-name">GitHub Copilot</div>
+        <div class="provider-model">模型：gpt-4o-mini</div>
+      </div>
+    </div>
+    <p class="text-muted" style="margin-bottom:16px;font-size:0.9rem">
+      请输入您的 GitHub Personal Access Token（需要 <code>models:read</code> 权限）。
+      家庭成员共享此 Token，只需配置一次。
     </p>
     <div class="form-group">
-      <label>API 地址</label>
-      <input type="url" id="apiBaseUrl"
-        placeholder="https://api.openai.com/v1"
-        value="https://api.openai.com/v1">
-    </div>
-    <div class="form-group">
-      <label>API Key</label>
-      <input type="password" id="apiKeyInput" placeholder="sk-…" autocomplete="off">
-    </div>
-    <div class="form-group">
-      <label>模型名称</label>
-      <input type="text" id="apiModel" placeholder="gpt-3.5-turbo" value="gpt-3.5-turbo">
+      <label>GitHub Token</label>
+      <input type="password" id="apiKeyInput" placeholder="ghp_…或 github_pat_…" autocomplete="off">
     </div>
   </div>
   <div class="modal-footer">
     <button class="btn-secondary" id="cancelApiKeyBtn">取消</button>
-    <button class="btn-primary" id="saveApiKeyBtn">保存设置</button>
+    <button class="btn-primary" id="saveApiKeyBtn">保存 Token</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     JOIN FAMILY MODAL
+     ═══════════════════════════════════════ -->
+<div class="modal hidden" id="joinFamilyModal" role="dialog" aria-labelledby="joinFamilyModalTitle" aria-modal="true">
+  <div class="modal-header">
+    <h2 id="joinFamilyModalTitle">👥 加入家庭</h2>
+    <button class="btn-close" id="closeJoinFamilyModal" aria-label="关闭">✕</button>
+  </div>
+  <div class="modal-body">
+    <p class="text-muted" style="margin-bottom:16px">
+      输入家庭代码后，您将与该家庭的成员共享用药数据和 AI Token。
+    </p>
+    <div class="form-group">
+      <label>家庭代码</label>
+      <input type="text" id="joinFamilyModalInput" placeholder="输入6位家庭代码"
+             maxlength="8" autocomplete="off" style="text-transform:uppercase">
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn-secondary" id="cancelJoinFamilyBtn">取消</button>
+    <button class="btn-primary" id="saveJoinFamilyBtn">加入家庭</button>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     AI CHAT PANEL
+     ═══════════════════════════════════════ -->
+<div class="chat-panel hidden" id="chatPanel" role="dialog" aria-label="AI 用药助手">
+  <div class="chat-panel-header">
+    <div class="chat-header-info">
+      <span class="chat-bot-avatar">🤖</span>
+      <div>
+        <div class="chat-header-title">AI 用药助手</div>
+        <div class="chat-header-sub">GitHub Copilot · gpt-4o-mini</div>
+      </div>
+    </div>
+    <button class="btn-close" id="closeChatPanel" aria-label="关闭聊天">✕</button>
+  </div>
+  <div class="chat-messages" id="chatMessages"></div>
+  <div class="chat-quick-btns" id="chatQuickBtns"></div>
+  <div class="chat-input-row">
+    <input type="text" id="chatInput" placeholder="输入您的问题…" autocomplete="off" maxlength="500">
+    <button class="btn-chat-send" id="chatSendBtn" aria-label="发送">➤</button>
   </div>
 </div>
 

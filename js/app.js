@@ -34,6 +34,12 @@ const App = {
     selectedRole: 'patient',
     newUserRole:  'patient',
     notifTimers:  [],     // setTimeout handles for scheduled notifications
+    joiningFamily: false, // onboarding: join vs create
+    chat: {
+      history:  [],       // [{role, content}]
+      open:     false,
+      thinking: false
+    }
   },
 
   /* ── Entry point ── */
@@ -301,17 +307,41 @@ const App = {
         this.state.selectedRole = btn.dataset.role;
       });
     });
+    // Family option buttons
+    document.querySelectorAll('.family-opt-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.family-opt-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const isJoin = btn.dataset.family === 'join';
+        this.state.joiningFamily = isJoin;
+        document.getElementById('joinFamilyGroup').classList.toggle('hidden', !isJoin);
+      });
+    });
   },
 
   async handleOnboardingSubmit() {
     const name = document.getElementById('userName').value.trim();
     if (!name) { showToast('请输入姓名', 'warn'); return; }
 
+    let familyCode;
+    if (this.state.joiningFamily) {
+      const entered = (document.getElementById('joinFamilyCodeInput')?.value || '').trim().toUpperCase();
+      if (!entered) { showToast('请输入家庭代码', 'warn'); return; }
+      familyCode = entered;
+      // Check if any existing users share this code (informational only)
+      const existing = await DB.getUsersByFamily(familyCode);
+      if (existing.length === 0) {
+        showToast(`未在本设备找到家庭 ${familyCode}，已创建新家庭档案`, 'warn');
+      }
+    } else {
+      familyCode = genFamilyCode();
+    }
+
     const user = {
       id:         genId(),
       name,
       role:       this.state.selectedRole,
-      familyCode: genFamilyCode(),
+      familyCode,
       createdAt:  Date.now()
     };
     await DB.saveUser(user);
@@ -321,9 +351,22 @@ const App = {
     await DB.saveSettings(this.state.settings);
 
     this.state.activeUser = user;
-    this.state.viewedPatient = user.role === 'patient' ? user : null;
+    if (this.state.joiningFamily) {
+      // Set viewed patient to first patient in joined family (if any)
+      await this.loadUsers();
+      const patients = this.state.users.filter(
+        (u) => u.role === 'patient' && u.familyCode === familyCode
+      );
+      this.state.viewedPatient = patients[0] || (user.role === 'patient' ? user : null);
+    } else {
+      this.state.viewedPatient = user.role === 'patient' ? user : null;
+    }
     this.state.medications = [];
     this.state.records = [];
+
+    if (this.state.viewedPatient) {
+      await this.loadTodayData();
+    }
 
     document.getElementById('onboarding').classList.add('hidden');
     this.showMainApp();
@@ -342,6 +385,18 @@ const App = {
     this.renderAll();
     this.scheduleNotifications();
     this.checkLowStock();
+    // Show chat FAB if AI is enabled
+    this._updateChatFabVisibility();
+  },
+
+  _updateChatFabVisibility() {
+    const fab = document.getElementById('chatFab');
+    if (!fab) return;
+    if (this.state.settings.aiEnabled && this.state.settings.apiKey) {
+      fab.classList.remove('hidden');
+    } else {
+      fab.classList.add('hidden');
+    }
   },
 
   renderAll() {
@@ -892,7 +947,9 @@ const App = {
     const aiToggle = document.getElementById('aiToggle');
     if (aiToggle) {
       aiToggle.checked = this.state.settings.aiEnabled;
-      document.getElementById('aiKeyItem').classList.toggle('hidden', !this.state.settings.aiEnabled);
+      const show = this.state.settings.aiEnabled;
+      document.getElementById('aiKeyItem')?.classList.toggle('hidden', !show);
+      document.getElementById('aiProviderItem')?.classList.toggle('hidden', !show);
     }
 
     // Reminder advance
@@ -1010,9 +1067,7 @@ const App = {
      API KEY MODAL
      ───────────────────────────────────────── */
   openApiKeyModal() {
-    document.getElementById('apiBaseUrl').value  = this.state.settings.apiBaseUrl || 'https://api.openai.com/v1';
     document.getElementById('apiKeyInput').value = this.state.settings.apiKey || '';
-    document.getElementById('apiModel').value    = this.state.settings.apiModel || 'gpt-3.5-turbo';
     document.getElementById('apiKeyModal').classList.remove('hidden');
     document.getElementById('modalOverlay').classList.remove('hidden');
   },
@@ -1023,12 +1078,197 @@ const App = {
   },
 
   async saveApiKey() {
-    this.state.settings.apiBaseUrl = document.getElementById('apiBaseUrl').value.trim();
-    this.state.settings.apiKey     = document.getElementById('apiKeyInput').value.trim();
-    this.state.settings.apiModel   = document.getElementById('apiModel').value.trim();
+    this.state.settings.apiKey = document.getElementById('apiKeyInput').value.trim();
     await DB.saveSettings(this.state.settings);
+    this._updateChatFabVisibility();
     this.closeApiKeyModal();
-    showToast('API 设置已保存', 'success');
+    showToast('GitHub Token 已保存', 'success');
+  },
+
+  /* ─────────────────────────────────────────
+     JOIN FAMILY (from settings)
+     ───────────────────────────────────────── */
+  openJoinFamilyModal() {
+    const inp = document.getElementById('joinFamilyModalInput');
+    if (inp) inp.value = '';
+    document.getElementById('joinFamilyModal').classList.remove('hidden');
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  },
+
+  closeJoinFamilyModal() {
+    document.getElementById('joinFamilyModal').classList.add('hidden');
+    document.getElementById('modalOverlay').classList.add('hidden');
+  },
+
+  async saveJoinFamily() {
+    const code = (document.getElementById('joinFamilyModalInput')?.value || '').trim().toUpperCase();
+    if (!code) { showToast('请输入家庭代码', 'warn'); return; }
+
+    const activeUser = this.state.activeUser;
+    if (!activeUser) return;
+
+    activeUser.familyCode = code;
+    await DB.saveUser(activeUser);
+
+    await this.loadUsers();
+    const patients = this.state.users.filter(
+      (u) => u.role === 'patient' && u.familyCode === code
+    );
+    if (patients.length > 0 && activeUser.role !== 'patient') {
+      this.state.viewedPatient = patients[0];
+      await this.loadTodayData();
+    } else if (activeUser.role === 'patient') {
+      this.state.viewedPatient = activeUser;
+      await this.loadTodayData();
+    }
+
+    this.renderAll();
+    this.closeJoinFamilyModal();
+    const memberCount = this.state.users.filter((u) => u.familyCode === code && u.id !== activeUser.id).length;
+    showToast(
+      memberCount > 0
+        ? `已加入家庭 ${code}（共 ${memberCount + 1} 人）`
+        : `家庭代码已更新为 ${code}`,
+      'success'
+    );
+  },
+
+  /* ─────────────────────────────────────────
+     AI CHAT
+     ───────────────────────────────────────── */
+  openChatPanel() {
+    const panel = document.getElementById('chatPanel');
+    if (!panel) return;
+    this.state.chat.open = true;
+    panel.classList.remove('hidden');
+    if (this.state.chat.history.length === 0) {
+      this._appendChatMessage('bot',
+        '您好！我是 AI 用药助手，基于 GitHub Copilot 驱动。\n您可以问我药品介绍、注意事项，或随便聊聊 😊');
+    }
+    this._renderChatQuickActions();
+    this._scrollChatToBottom();
+    document.getElementById('chatInput')?.focus();
+  },
+
+  closeChatPanel() {
+    const panel = document.getElementById('chatPanel');
+    if (panel) panel.classList.add('hidden');
+    this.state.chat.open = false;
+  },
+
+  _appendChatMessage(role, content) {
+    this.state.chat.history.push({ role: role === 'bot' ? 'assistant' : 'user', content });
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = `chat-message ${role}`;
+    div.innerHTML = `<div class="chat-bubble">${esc(content).replace(/\n/g, '<br>')}</div>`;
+    container.appendChild(div);
+    this._scrollChatToBottom();
+  },
+
+  _showChatTyping() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return null;
+    const div = document.createElement('div');
+    div.className = 'chat-message bot';
+    div.id = 'chatTypingIndicator';
+    div.innerHTML = `<div class="chat-bubble chat-typing"><span></span><span></span><span></span></div>`;
+    container.appendChild(div);
+    this._scrollChatToBottom();
+    return div;
+  },
+
+  _scrollChatToBottom() {
+    const c = document.getElementById('chatMessages');
+    if (c) c.scrollTop = c.scrollHeight;
+  },
+
+  _buildChatSystemPrompt() {
+    const patient = this.state.viewedPatient;
+    const meds    = this.state.medications.filter((m) => m.active !== false);
+    let prompt = '你是一个专业的用药助手 AI，提供药品信息、注意事项和健康咨询。回答要简洁、温和、易懂。如有必要，建议用户咨询医生。';
+    if (patient && meds.length > 0) {
+      const medList = meds.map((m) =>
+        `- ${m.name}：每次 ${m.dose}${m.unit}，每天 ${m.times?.length || 0} 次` +
+        `（${(m.times || []).join('、')}）${m.notes ? '，' + m.notes : ''}`
+      ).join('\n');
+      prompt += `\n\n当前患者（${patient.name}）的用药清单：\n${medList}`;
+    }
+    return prompt;
+  },
+
+  _renderChatQuickActions() {
+    const container = document.getElementById('chatQuickBtns');
+    if (!container) return;
+    const meds = this.state.medications.filter((m) => m.active !== false);
+    const actions = [];
+    meds.slice(0, 3).forEach((m) => {
+      actions.push({
+        label: `💊 ${m.name} 注意事项`,
+        text:  `请介绍一下 ${m.name} 的主要注意事项和副作用。`
+      });
+    });
+    if (meds.length > 1) {
+      actions.push({
+        label: '⚠️ 药物相互作用',
+        text:  `我在服用 ${meds.map((m) => m.name).join('、')}，有没有需要注意的药物相互作用？`
+      });
+    }
+    actions.push({
+      label: '📋 今日用药总览',
+      text:  '帮我总结一下今天的用药安排和注意事项。'
+    });
+    container.innerHTML = '';
+    actions.forEach(({ label, text }) => {
+      const btn = document.createElement('button');
+      btn.className = 'chat-quick-btn';
+      btn.textContent = label;
+      btn.addEventListener('click', () => this._sendChatText(text));
+      container.appendChild(btn);
+    });
+  },
+
+  async sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    await this._sendChatText(text);
+  },
+
+  async _sendChatText(text) {
+    if (this.state.chat.thinking) return;
+    if (!this.state.settings.apiKey) {
+      showToast('请先在设置中配置 GitHub Token', 'warn');
+      return;
+    }
+
+    this._appendChatMessage('user', text);
+    this.state.chat.thinking = true;
+    const sendBtn = document.getElementById('chatSendBtn');
+    if (sendBtn) sendBtn.disabled = true;
+    const typingEl = this._showChatTyping();
+
+    try {
+      const messages = [
+        { role: 'system', content: this._buildChatSystemPrompt() },
+        ...this.state.chat.history
+      ];
+      const reply = await AI.chat(messages, this.state.settings.apiKey);
+      typingEl?.remove();
+      this._appendChatMessage('bot', reply);
+    } catch (err) {
+      typingEl?.remove();
+      this.state.chat.history.pop();
+      document.getElementById('chatMessages')?.lastElementChild?.remove();
+      showToast('AI 回复失败：' + err.message, 'error');
+    } finally {
+      this.state.chat.thinking = false;
+      if (sendBtn) sendBtn.disabled = false;
+      document.getElementById('chatInput')?.focus();
+    }
   },
 
   /* ─────────────────────────────────────────
@@ -1116,6 +1356,21 @@ const App = {
     document.getElementById('cancelApiKeyBtn').addEventListener('click', () => this.closeApiKeyModal());
     document.getElementById('saveApiKeyBtn').addEventListener('click', () => this.saveApiKey());
 
+    // Join family modal (from settings)
+    document.getElementById('joinFamilyBtn')?.addEventListener('click', () => this.openJoinFamilyModal());
+    document.getElementById('closeJoinFamilyModal')?.addEventListener('click', () => this.closeJoinFamilyModal());
+    document.getElementById('cancelJoinFamilyBtn')?.addEventListener('click', () => this.closeJoinFamilyModal());
+    document.getElementById('saveJoinFamilyBtn')?.addEventListener('click', () => this.saveJoinFamily());
+
+    // Copy family code
+    document.getElementById('copyFamilyCodeBtn')?.addEventListener('click', () => {
+      const code = this.state.activeUser?.familyCode;
+      if (!code) return;
+      navigator.clipboard?.writeText(code)
+        .then(() => showToast('家庭代码已复制 ✓', 'success'))
+        .catch(() => showToast('复制失败，请手动复制：' + code, 'warn'));
+    });
+
     // Settings toggles (save on change)
     document.getElementById('notificationToggle').addEventListener('change', async () => {
       await this.saveSettings();
@@ -1126,7 +1381,10 @@ const App = {
     });
     document.getElementById('aiToggle').addEventListener('change', async () => {
       await this.saveSettings();
-      document.getElementById('aiKeyItem').classList.toggle('hidden', !this.state.settings.aiEnabled);
+      const show = this.state.settings.aiEnabled;
+      document.getElementById('aiKeyItem')?.classList.toggle('hidden', !show);
+      document.getElementById('aiProviderItem')?.classList.toggle('hidden', !show);
+      this._updateChatFabVisibility();
     });
     document.getElementById('reminderAdvance').addEventListener('change', () => this.saveSettings());
 
@@ -1164,11 +1422,20 @@ const App = {
       this.renderHistoryTab();
     });
 
+    // AI Chat FAB
+    document.getElementById('chatFab')?.addEventListener('click', () => this.openChatPanel());
+    document.getElementById('closeChatPanel')?.addEventListener('click', () => this.closeChatPanel());
+    document.getElementById('chatSendBtn')?.addEventListener('click', () => this.sendChatMessage());
+    document.getElementById('chatInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendChatMessage(); }
+    });
+
     // Overlay close
     document.getElementById('modalOverlay').addEventListener('click', () => {
       this.closeMedicationModal();
       this.closeUserModal();
       this.closeApiKeyModal();
+      this.closeJoinFamilyModal();
     });
   }
 };
