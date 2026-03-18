@@ -126,7 +126,7 @@ const App = {
     const patient = this.state.viewedPatient;
     if (!patient) return;
 
-    const activeMeds = this.state.medications.filter((m) => m.active !== false);
+    const activeMeds = this.state.medications.filter((m) => m.active !== false && m.userId === patient.id);
     let changed = false;
 
     for (const med of activeMeds) {
@@ -789,7 +789,8 @@ const App = {
     const unit = document.getElementById('medUnit').value;
     const notes    = document.getElementById('medNotes').value.trim();
     const quantity = parseInt(document.getElementById('medQuantity').value) || 0;
-    const userId   = document.getElementById('medPatient').value;
+    const userId   = document.getElementById('medPatient').value || this.state.viewedPatient?.id || '';
+    if (!userId) { showToast('请先选择患者', 'warn'); return; }
 
     // Collect times, de-duplicating via Set
     const timesRaw = [];
@@ -808,7 +809,11 @@ const App = {
     await DB.saveMedication(med);
 
     if (isNew) {
-      this.state.medications.push(med);
+      // Only add to in-memory state if this medication belongs to the currently viewed patient;
+      // otherwise it would appear then disappear after the next data reload.
+      if (med.userId === this.state.viewedPatient?.id) {
+        this.state.medications.push(med);
+      }
     } else {
       const idx = this.state.medications.findIndex((m) => m.id === med.id);
       if (idx >= 0) this.state.medications[idx] = med;
@@ -887,7 +892,11 @@ const App = {
         apiModel:   this.state.settings.apiModel
       });
 
-      const userId = document.getElementById('medPatient').value;
+      const userId = document.getElementById('medPatient').value || this.state.viewedPatient?.id || '';
+      if (!userId) {
+        showToast('请先选择患者', 'warn');
+        return;
+      }
 
       if (results.length === 0) {
         showToast('未识别到任何药品，请检查输入内容', 'warn');
@@ -912,7 +921,9 @@ const App = {
             active:    true,
           };
           await DB.saveMedication(med);
-          this.state.medications.push(med);
+          if (med.userId === this.state.viewedPatient?.id) {
+            this.state.medications.push(med);
+          }
           await this.ensureTodayRecords();
           this.renderAll();
           this.scheduleNotifications();
@@ -941,7 +952,9 @@ const App = {
             active:    true
           };
           await DB.saveMedication(med);
-          this.state.medications.push(med);
+          if (med.userId === this.state.viewedPatient?.id) {
+            this.state.medications.push(med);
+          }
           added++;
         }
         if (added === 0) {
