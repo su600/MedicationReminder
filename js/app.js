@@ -741,12 +741,21 @@ const App = {
   },
 
   /** Build <option> elements for every half-hour of the day (00:00, 00:30, … 23:30).
-   *  `value` is snapped to the nearest :00 or :30 and pre-selected. */
+   *  `value` is rounded to the nearest :00 or :30 and pre-selected. */
   _buildTimeOptions(value = '08:00') {
     const parts = (value || '').split(':');
-    const h = parseInt(parts[0] || '8', 10);
+    let h = parseInt(parts[0] || '8', 10);
     const m = parseInt(parts[1] || '0', 10);
-    const snapM = m >= 30 ? 30 : 0;
+    // Round to nearest 30 minutes with hour rollover
+    let snapM;
+    if (m < 15) {
+      snapM = 0;
+    } else if (m < 45) {
+      snapM = 30;
+    } else {
+      snapM = 0;
+      h = (h + 1) % 24;
+    }
     const selected = `${String(h).padStart(2, '0')}:${String(snapM).padStart(2, '0')}`;
     let html = '';
     for (let hour = 0; hour < 24; hour++) {
@@ -766,7 +775,7 @@ const App = {
     row.dataset.rowId = rowId;
     row.innerHTML = `
       <select class="custom-time-input">${this._buildTimeOptions(value)}</select>
-      <button class="btn-remove-time" data-row-id="${rowId}">✕</button>
+      <button class="btn-remove-time" data-row-id="${rowId}" title="删除该时间" aria-label="删除该时间">✕</button>
     `;
     row.querySelector('.btn-remove-time').addEventListener('click', () => row.remove());
     container.appendChild(row);
@@ -782,13 +791,13 @@ const App = {
     const quantity = parseInt(document.getElementById('medQuantity').value) || 0;
     const userId   = document.getElementById('medPatient').value;
 
-    // Collect times
-    const times = [];
+    // Collect times, de-duplicating via Set
+    const timesRaw = [];
     document.querySelectorAll('.custom-time-input').forEach((inp) => {
-      if (inp.value) times.push(inp.value);
+      if (inp.value) timesRaw.push(inp.value);
     });
+    const times = [...new Set(timesRaw)].sort();
     if (times.length === 0) { showToast('请至少添加一个服药时间', 'warn'); return; }
-    times.sort();
 
     const isNew = !this.state.editingMedId;
     const med = isNew

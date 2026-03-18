@@ -928,7 +928,7 @@ body {
   background: var(--border);
 }
 
-/* ── Time Checkboxes ── */
+/* ── Time Slots ── */
 .custom-time-row {
   display: flex;
   align-items: center;
