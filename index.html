@@ -189,12 +189,12 @@
             </label>
           </div>
           <div class="settings-item hidden" id="aiKeyItem">
-            <span>GitHub Token</span>
+            <span>API 配置</span>
             <button class="btn-text" id="setApiKeyBtn">配置 →</button>
           </div>
           <div class="settings-item hidden" id="aiProviderItem">
-            <span class="text-muted" style="font-size:0.85rem">
-              供应商：GitHub Copilot · 模型：gpt-4o-mini
+            <span class="text-muted" style="font-size:0.85rem" id="aiProviderLabel">
+              供应商：GitHub Copilot · 模型：gemini-3-flash
             </span>
           </div>
         </div>
@@ -416,25 +416,31 @@
     <button class="btn-close" id="closeApiKeyModal" aria-label="关闭">✕</button>
   </div>
   <div class="modal-body">
-    <div class="ai-provider-badge">
-      <span class="provider-logo">🐙</span>
-      <div>
-        <div class="provider-name">GitHub Copilot</div>
-        <div class="provider-model">模型：gpt-4o-mini</div>
-      </div>
-    </div>
-    <p class="text-muted" style="margin-bottom:16px;font-size:0.9rem">
-      请输入您的 GitHub Personal Access Token（需要 <code>models:read</code> 权限）。
-      家庭成员共享此 Token，只需配置一次。
-    </p>
     <div class="form-group">
-      <label>GitHub Token</label>
-      <input type="password" id="apiKeyInput" placeholder="ghp_…或 github_pat_…" autocomplete="off">
+      <label>AI 服务提供商</label>
+      <select id="apiProviderSelect">
+        <option value="github">GitHub Copilot（默认）</option>
+        <option value="aliyun">阿里云百炼 – DeepSeek</option>
+        <option value="custom">自定义 OpenAI 兼容接口</option>
+      </select>
+    </div>
+    <div id="apiProviderDesc" class="text-muted" style="margin-bottom:12px;font-size:0.85rem"></div>
+    <div class="form-group" id="apiBaseUrlGroup">
+      <label>API Base URL</label>
+      <input type="url" id="apiBaseUrlInput" placeholder="https://…/v1" autocomplete="off">
+    </div>
+    <div class="form-group" id="apiModelGroup">
+      <label>模型名称</label>
+      <input type="text" id="apiModelInput" placeholder="例如：deepseek-chat" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label id="apiKeyLabel">API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="" autocomplete="off">
     </div>
   </div>
   <div class="modal-footer">
     <button class="btn-secondary" id="cancelApiKeyBtn">取消</button>
-    <button class="btn-primary" id="saveApiKeyBtn">保存 Token</button>
+    <button class="btn-primary" id="saveApiKeyBtn">保存配置</button>
   </div>
 </div>
 
@@ -473,7 +479,7 @@
       <span class="chat-bot-avatar">🤖</span>
       <div>
         <div class="chat-header-title">AI 用药助手</div>
-        <div class="chat-header-sub">GitHub Copilot · gpt-4o-mini</div>
+        <div class="chat-header-sub" id="chatHeaderSub">GitHub Copilot · gemini-3-flash</div>
       </div>
     </div>
     <button class="btn-close" id="closeChatPanel" aria-label="关闭聊天">✕</button>
