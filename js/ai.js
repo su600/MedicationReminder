@@ -1,15 +1,34 @@
 /**
  * ai.js – Natural language medication parser and AI chat for 用药助手
  *
- * Provider: GitHub Copilot (GitHub Models API)
- * Model: fixed to GITHUB_AI_MODEL constant
+ * Provider: GitHub Copilot (GitHub Models API) or any OpenAI-compatible endpoint
+ * Model: configurable via cfg.apiModel; falls back to GITHUB_AI_MODEL constant.
  * Falls back to rule-based parser when no API key is present.
  */
 
-/* ── Fixed GitHub Copilot / GitHub Models configuration ── */
+/* ── Default GitHub Copilot / GitHub Models configuration ── */
 const GITHUB_AI_BASE_URL = 'https://models.inference.ai.azure.com';
-/* Using gemini-3-flash via GitHub Models */
+/* Default model via GitHub Models */
 const GITHUB_AI_MODEL    = 'gemini-3-flash';
+
+/* ── Preset third-party provider configurations ── */
+const AI_PRESETS = {
+  github: {
+    label:   'GitHub Copilot',
+    baseUrl: 'https://models.inference.ai.azure.com',
+    model:   'gemini-3-flash'
+  },
+  aliyun: {
+    label:   '阿里云百炼 (DeepSeek)',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model:   'deepseek-chat'
+  },
+  custom: {
+    label:   '自定义 OpenAI 兼容接口',
+    baseUrl: '',
+    model:   ''
+  }
+};
 
 const AI = {
   /**
@@ -33,21 +52,24 @@ const AI = {
   /**
    * Multi-turn chat with the AI model.
    * @param {Array<{role:string, content:string}>} messages – conversation history
-   * @param {string} apiKey – GitHub Copilot / GitHub Models PAT
+   * @param {string} apiKey – API key / token
+   * @param {object} cfg – { apiBaseUrl, apiModel } (optional, falls back to GitHub defaults)
    * @returns {Promise<string>} assistant reply
    */
-  async chat(messages, apiKey) {
+  async chat(messages, apiKey, cfg = {}) {
     if (!apiKey || !apiKey.trim()) {
-      throw new Error('请先在设置中配置 GitHub Token');
+      throw new Error('请先在设置中配置 API Key');
     }
-    const resp = await fetch(`${GITHUB_AI_BASE_URL}/chat/completions`, {
+    const baseUrl = (cfg.apiBaseUrl && cfg.apiBaseUrl.trim()) ? cfg.apiBaseUrl.trim() : GITHUB_AI_BASE_URL;
+    const model   = (cfg.apiModel   && cfg.apiModel.trim())   ? cfg.apiModel.trim()   : GITHUB_AI_MODEL;
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type':  'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model:       GITHUB_AI_MODEL,
+        model,
         messages,
         temperature: 0.7,
         max_tokens:  800
@@ -63,10 +85,10 @@ const AI = {
     return json.choices?.[0]?.message?.content || '';
   },
 
-  /* ── LLM via GitHub Models (fixed endpoint + model) ── */
+  /* ── LLM via configurable OpenAI-compatible endpoint ── */
   async _callLLM(text, cfg) {
-    const baseUrl = GITHUB_AI_BASE_URL;
-    const model   = GITHUB_AI_MODEL;
+    const baseUrl = (cfg.apiBaseUrl && cfg.apiBaseUrl.trim()) ? cfg.apiBaseUrl.trim() : GITHUB_AI_BASE_URL;
+    const model   = (cfg.apiModel   && cfg.apiModel.trim())   ? cfg.apiModel.trim()   : GITHUB_AI_MODEL;
 
     const systemPrompt = `你是一个药品信息提取助手。从用户输入的自然语言药单中提取结构化信息，返回 JSON 格式。
 JSON 字段说明：

@@ -951,6 +951,7 @@ const App = {
       document.getElementById('aiKeyItem')?.classList.toggle('hidden', !show);
       document.getElementById('aiProviderItem')?.classList.toggle('hidden', !show);
     }
+    this._updateProviderDisplay();
 
     // Reminder advance
     const advSel = document.getElementById('reminderAdvance');
@@ -1067,9 +1068,64 @@ const App = {
      API KEY MODAL
      ───────────────────────────────────────── */
   openApiKeyModal() {
-    document.getElementById('apiKeyInput').value = this.state.settings.apiKey || '';
+    const providerSel = document.getElementById('apiProviderSelect');
+    const baseUrlInp  = document.getElementById('apiBaseUrlInput');
+    const modelInp    = document.getElementById('apiModelInput');
+    const keyInp      = document.getElementById('apiKeyInput');
+    const s = this.state.settings;
+
+    // Restore saved values
+    const savedProvider = s.apiProvider || 'github';
+    if (providerSel) providerSel.value = savedProvider;
+    if (baseUrlInp)  baseUrlInp.value  = (savedProvider === 'custom') ? (s.apiBaseUrl || '') : '';
+    if (modelInp)    modelInp.value    = (savedProvider === 'custom') ? (s.apiModel   || '') : '';
+    if (keyInp)      keyInp.value      = s.apiKey || '';
+
+    this._updateApiModalFields();
+
     document.getElementById('apiKeyModal').classList.remove('hidden');
     document.getElementById('modalOverlay').classList.remove('hidden');
+  },
+
+  /* Update API modal field visibility/placeholders based on selected provider */
+  _updateApiModalFields() {
+    const providerSel  = document.getElementById('apiProviderSelect');
+    const baseUrlGroup = document.getElementById('apiBaseUrlGroup');
+    const modelGroup   = document.getElementById('apiModelGroup');
+    const baseUrlInp   = document.getElementById('apiBaseUrlInput');
+    const modelInp     = document.getElementById('apiModelInput');
+    const keyLabel     = document.getElementById('apiKeyLabel');
+    const descEl       = document.getElementById('apiProviderDesc');
+    if (!providerSel) return;
+
+    const provider = providerSel.value;
+    const preset   = (typeof AI_PRESETS !== 'undefined') ? AI_PRESETS[provider] : null;
+
+    if (provider === 'github') {
+      baseUrlGroup?.classList.add('hidden');
+      modelGroup?.classList.add('hidden');
+      if (keyLabel) keyLabel.textContent = 'GitHub Token';
+      const kInp = document.getElementById('apiKeyInput');
+      if (kInp) kInp.placeholder = 'ghp_… 或 github_pat_…';
+      if (descEl) descEl.textContent = '使用 GitHub Copilot 提供的模型服务，需要具有 models:read 权限的 Personal Access Token。';
+    } else if (provider === 'aliyun') {
+      baseUrlGroup?.classList.add('hidden');
+      modelGroup?.classList.add('hidden');
+      if (keyLabel) keyLabel.textContent = '阿里云 API Key';
+      const kInp = document.getElementById('apiKeyInput');
+      if (kInp) kInp.placeholder = 'sk-…';
+      if (descEl) descEl.textContent = '使用阿里云百炼平台的 DeepSeek 模型（deepseek-chat）。需要在阿里云百炼控制台创建 API Key。';
+    } else {
+      // custom
+      baseUrlGroup?.classList.remove('hidden');
+      modelGroup?.classList.remove('hidden');
+      if (baseUrlInp) baseUrlInp.placeholder = 'https://api.example.com/v1';
+      if (modelInp)   modelInp.placeholder   = 'deepseek-chat';
+      if (keyLabel) keyLabel.textContent = 'API Key';
+      const kInp = document.getElementById('apiKeyInput');
+      if (kInp) kInp.placeholder = 'sk-…';
+      if (descEl) descEl.textContent = '任意兼容 OpenAI Chat Completions API 的服务（如青云 DeepSeek、本地 Ollama 等）。';
+    }
   },
 
   closeApiKeyModal() {
@@ -1078,14 +1134,46 @@ const App = {
   },
 
   async saveApiKey() {
-    this.state.settings.apiKey = document.getElementById('apiKeyInput').value.trim();
-    // Normalise legacy OpenAI-compatible fields so settings never drift
-    this.state.settings.apiBaseUrl = GITHUB_AI_BASE_URL;
-    this.state.settings.apiModel   = GITHUB_AI_MODEL;
-    await DB.saveSettings(this.state.settings);
+    const provider = document.getElementById('apiProviderSelect')?.value || 'github';
+    const apiKey   = document.getElementById('apiKeyInput')?.value.trim() || '';
+    const s        = this.state.settings;
+
+    s.apiProvider = provider;
+    s.apiKey      = apiKey;
+
+    if (provider === 'github') {
+      s.apiBaseUrl = GITHUB_AI_BASE_URL;
+      s.apiModel   = GITHUB_AI_MODEL;
+    } else if (provider === 'aliyun') {
+      s.apiBaseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+      s.apiModel   = 'deepseek-chat';
+    } else {
+      // custom
+      s.apiBaseUrl = document.getElementById('apiBaseUrlInput')?.value.trim() || '';
+      s.apiModel   = document.getElementById('apiModelInput')?.value.trim()   || '';
+    }
+
+    await DB.saveSettings(s);
+    this._updateProviderDisplay();
     this._updateChatFabVisibility();
     this.closeApiKeyModal();
-    showToast('GitHub Token 已保存', 'success');
+    showToast('AI 配置已保存', 'success');
+  },
+
+  /* Update the provider label in settings and chat header */
+  _updateProviderDisplay() {
+    const s        = this.state.settings;
+    const provider = s.apiProvider || 'github';
+    const presets  = (typeof AI_PRESETS !== 'undefined') ? AI_PRESETS : {};
+    const label    = presets[provider]?.label || '自定义';
+    const model    = s.apiModel || GITHUB_AI_MODEL;
+    const text     = `供应商：${label} · 模型：${model}`;
+
+    const providerLabelEl = document.getElementById('aiProviderLabel');
+    if (providerLabelEl) providerLabelEl.textContent = text;
+
+    const chatSubEl = document.getElementById('chatHeaderSub');
+    if (chatSubEl) chatSubEl.textContent = `${label} · ${model}`;
   },
 
   /* ─────────────────────────────────────────
@@ -1256,7 +1344,7 @@ const App = {
   async _sendChatText(text) {
     if (this.state.chat.thinking) return;
     if (!this.state.settings.apiKey) {
-      showToast('请先在设置中配置 GitHub Token', 'warn');
+      showToast('请先在设置中配置 API Key', 'warn');
       return;
     }
 
@@ -1274,7 +1362,11 @@ const App = {
         { role: 'system', content: this._buildChatSystemPrompt() },
         ...trimmedHistory
       ];
-      const reply = await AI.chat(messages, this.state.settings.apiKey);
+      const cfg = {
+        apiBaseUrl: this.state.settings.apiBaseUrl,
+        apiModel:   this.state.settings.apiModel
+      };
+      const reply = await AI.chat(messages, this.state.settings.apiKey, cfg);
       typingEl?.remove();
       this._appendChatMessage('bot', reply);
     } catch (err) {
@@ -1373,6 +1465,7 @@ const App = {
     document.getElementById('closeApiKeyModal').addEventListener('click', () => this.closeApiKeyModal());
     document.getElementById('cancelApiKeyBtn').addEventListener('click', () => this.closeApiKeyModal());
     document.getElementById('saveApiKeyBtn').addEventListener('click', () => this.saveApiKey());
+    document.getElementById('apiProviderSelect')?.addEventListener('change', () => this._updateApiModalFields());
 
     // Join family modal (from settings)
     document.getElementById('joinFamilyBtn')?.addEventListener('click', () => this.openJoinFamilyModal());
