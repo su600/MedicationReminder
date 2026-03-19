@@ -82,18 +82,39 @@ const App = {
      ───────────────────────────────────────── */
   async loadSettings() {
     this.state.settings = await DB.getSettings();
-    // Migrate: if provider is a known preset but the stored URL/model no longer
-    // match the preset (e.g. from an older app version), silently fix them so
-    // the AI features point at the correct endpoint.
+    // Migrate legacy installs: ensure apiProvider is set and preset URLs are current.
     const s = this.state.settings;
-    if (s.apiProvider && s.apiProvider !== 'custom' && typeof AI_PRESETS !== 'undefined') {
+    let needSave = false;
+
+    // 1. If apiProvider is missing entirely, detect legacy OpenAI URL and
+    //    rewrite to the github preset; otherwise just default to 'github'.
+    if (!s.apiProvider) {
+      const legacyOpenAiUrls = ['https://api.openai.com', 'https://api.openai.com/v1'];
+      const legacyModels     = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4o', 'gpt-4o-mini'];
+      if (legacyOpenAiUrls.some((u) => (s.apiBaseUrl || '').startsWith(u)) ||
+          legacyModels.includes(s.apiModel || '')) {
+        // Was pointing at legacy OpenAI – redirect to GitHub Models
+        s.apiProvider = 'github';
+        s.apiBaseUrl  = AI_PRESETS.github.baseUrl;
+        s.apiModel    = AI_PRESETS.github.model;
+      } else {
+        s.apiProvider = 'github';
+      }
+      needSave = true;
+    }
+
+    // 2. If provider is a known preset but URL/model drifted (stale from older
+    //    version), silently realign them so AI features point at the right endpoint.
+    if (s.apiProvider !== 'custom' && typeof AI_PRESETS !== 'undefined') {
       const preset = AI_PRESETS[s.apiProvider];
       if (preset && (s.apiBaseUrl !== preset.baseUrl || s.apiModel !== preset.model)) {
         s.apiBaseUrl = preset.baseUrl;
         s.apiModel   = preset.model;
-        await DB.saveSettings(s);
+        needSave = true;
       }
     }
+
+    if (needSave) await DB.saveSettings(s);
   },
 
   async loadUsers() {
@@ -1467,7 +1488,7 @@ const App = {
       await this.loadTodayData();
     } else {
       // Family-role user joined a family that has no patients on this device yet.
-      // Keep the current view intact so the UI isn't abruptly cleared.
+      // Clear the viewed patient and medication data since there is nothing to show.
       this.state.viewedPatient = null;
       this.state.medications = [];
       this.state.records = [];
