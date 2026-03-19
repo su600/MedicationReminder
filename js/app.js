@@ -202,15 +202,30 @@ const App = {
   handleSnooze(data) {
     if (!data) return;
     const delay = data.snoozeMs || 15 * 60 * 1000;
-    setTimeout(() => {
+    setTimeout(async () => {
       if (Notification.permission !== 'granted') return;
-      const n = new Notification(data.title || '用药提醒 💊', {
-        body:             data.body || '该服药了！',
-        icon:             'icons/icon-192.png',
-        tag:              data.tag || 'medication-snooze',
-        requireInteraction: true
-      });
-      n.onclick = () => { window.focus(); n.close(); };
+      const iconUrl = new URL('./icons/icon-192.png', location.href).href;
+      const title = data.title || '用药提醒 💊';
+      const options = {
+        body:               data.body || '该服药了！',
+        icon:               iconUrl,
+        badge:              iconUrl,
+        tag:                data.tag || 'medication-snooze',
+        data:               data,
+        requireInteraction: true,
+        actions: [
+          { action: 'taken', title: '已服药 ✓' },
+          { action: 'snooze', title: '15分钟后提醒' }
+        ]
+      };
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, options);
+      } catch (err) {
+        console.warn('[handleSnooze] registration.showNotification failed, falling back to Notification API:', err);
+        const n = new Notification(title, options);
+        n.onclick = () => { window.focus(); n.close(); };
+      }
     }, delay);
   },
 
@@ -236,28 +251,44 @@ const App = {
     const advance = (this.state.settings.reminderAdvance || 0) * 60 * 1000;
     const now = Date.now();
     const today = todayStr();
+    // Resolve icon URL relative to the current page so it works on any subpath host
+    const iconUrl = new URL('./icons/icon-192.png', location.href).href;
 
     for (const rec of this.state.records) {
       if (rec.status !== 'pending') continue;
       const med = this.state.medications.find((m) => m.id === rec.medicationId);
       if (!med) continue;
 
-      const [h, m] = rec.scheduledTime.split(':').map(Number);
       const schMs = new Date(`${today}T${rec.scheduledTime}:00`).getTime() - advance;
       const delay = schMs - now;
 
       if (delay > 0) {
         const timer = setTimeout(async () => {
           if (Notification.permission !== 'granted') return;
-          const n = new Notification(`💊 用药提醒`, {
+          const title = '💊 用药提醒';
+          const options = {
             body:    `${this.state.viewedPatient?.name || ''} 该服 ${med.name} 了（${med.dose}${med.unit}）`,
-            icon:    '/icons/icon-192.png',
-            badge:   '/icons/icon-192.png',
+            icon:    iconUrl,
+            badge:   iconUrl,
             tag:     `med-${rec.id}`,
             data:    { recordId: rec.id },
-            requireInteraction: true
-          });
-          n.onclick = () => { window.focus(); this.markTaken(rec.id); n.close(); };
+            requireInteraction: true,
+            actions: [
+              { action: 'taken', title: '已服药 ✓' },
+              { action: 'snooze', title: '15分钟后提醒' }
+            ]
+          };
+          try {
+            // Use SW registration.showNotification() — works when a SW is active
+            // (new Notification() is blocked by Chrome when a SW is registered)
+            const reg = await navigator.serviceWorker.ready;
+            await reg.showNotification(title, options);
+          } catch (err) {
+            // Fallback for browsers without SW support
+            console.warn('[scheduleNotifications] registration.showNotification failed, falling back to Notification API:', err);
+            const n = new Notification(title, options);
+            n.onclick = () => { window.focus(); this.markTaken(rec.id); n.close(); };
+          }
         }, delay);
         this.state.notifTimers.push(timer);
       }

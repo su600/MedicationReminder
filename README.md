@@ -15,7 +15,7 @@
 
 ### 功能特性
 
-- **智能用药提醒**：根据药单自动生成每日用药计划，在服药时间前推送通知；支持设置提前提醒时长。Push 通知（Service Worker）还提供「15分钟后提醒」（Snooze）操作。
+- **智能用药提醒**：根据药单自动生成每日用药计划，在服药时间前推送通知；支持设置提前提醒时长，通知提供「15分钟后提醒」（Snooze）操作。
 - **一键打勾确认**：每次服药后可勾选确认，清晰记录当天用药情况。
 - **药品数量追踪**：记录药品剩余数量，提前一周在库存不足时自动提醒补充。
 - **AI 药单解析**：支持多种 AI 服务商（GitHub Copilot、阿里云百炼 DeepSeek、自定义 OpenAI 兼容接口），用自然语言描述药单，自动解析生成用药计划（需配置 API Key）。无 API Key 时自动回退到内置规则解析。
@@ -46,7 +46,7 @@
 | HTML / CSS / JavaScript | 纯前端实现，无需构建工具 |
 | PWA (Service Worker + Web App Manifest) | 支持离线使用和桌面安装 |
 | IndexedDB | 本地数据持久化存储 |
-| Web Notifications API | 系统级推送提醒（Snooze 稍后提醒仅限 Service Worker Push 通知操作）|
+| Web Notifications API | 系统级推送提醒（含稍后提醒 Snooze） |
 | OpenAI 兼容 API（可选）| AI 自然语言药单解析 & 用药咨询 |
 
 ### Docker 部署
@@ -103,7 +103,7 @@ MedicationReminder/
 
 ### Features
 
-- **Smart Medication Reminders**: Automatically generates a daily medication schedule from your prescription and sends push notifications before each dose. Supports configurable advance reminder time. Push notifications (via Service Worker) include a "Snooze 15 min" action button.
+- **Smart Medication Reminders**: Automatically generates a daily medication schedule from your prescription and sends push notifications before each dose. Supports configurable advance reminder time; notifications include a "Snooze 15 min" action button.
 - **One-tap Dose Confirmation**: Check off each dose after taking it to keep a clear record of your daily medication.
 - **Inventory Tracking**: Tracks remaining medication quantities and sends a low-stock alert one week before running out.
 - **AI Prescription Parsing**: Supports multiple AI providers (GitHub Copilot, Aliyun Bailian DeepSeek, or any custom OpenAI-compatible endpoint) to parse natural-language prescription descriptions and auto-fill medication details (requires API key configuration). Falls back to a built-in rule-based parser when no API key is present.
@@ -134,7 +134,7 @@ Without an API key, AI prescription parsing automatically falls back to the buil
 | HTML / CSS / JavaScript | Pure frontend, no build tools required |
 | PWA (Service Worker + Web App Manifest) | Offline support and home screen installation |
 | IndexedDB | Client-side persistent data storage |
-| Web Notifications API | System-level push reminders (Snooze available via Service Worker push actions) |
+| Web Notifications API | System-level push reminders with Snooze support |
 | OpenAI-compatible API (optional) | AI-powered prescription parsing & medication chat |
 
 ### Docker Deployment
