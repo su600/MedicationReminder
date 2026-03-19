@@ -35,7 +35,8 @@ const AI = {
    * Parse a natural language medication prescription.
    * Returns an array of partial Medication objects (one per drug found).
    * @param {string} text  – raw user input
-   * @param {object} cfg   – { apiBaseUrl, apiKey, apiModel }
+   * @param {object} cfg   – { apiBaseUrl, apiKey, apiModel, medicationTimes }
+   *   medicationTimes: array of default daily times, e.g. ['09:00','13:00','20:00']
    * @returns {Promise<Array<object>>}
    */
   async parse(text, cfg = {}) {
@@ -46,7 +47,7 @@ const AI = {
         console.warn('AI API failed, falling back to rule-based parser:', err.message);
       }
     }
-    return AI._ruleBased(text);
+    return AI._ruleBased(text, cfg.medicationTimes);
   },
 
   /**
@@ -90,18 +91,25 @@ const AI = {
     const baseUrl = (cfg.apiBaseUrl && cfg.apiBaseUrl.trim()) ? cfg.apiBaseUrl.trim() : GITHUB_AI_BASE_URL;
     const model   = (cfg.apiModel   && cfg.apiModel.trim())   ? cfg.apiModel.trim()   : GITHUB_AI_MODEL;
 
+    // Use configured default daily medication times, fall back to DEFAULT_MEDICATION_TIMES
+    const times = Array.isArray(cfg.medicationTimes) && cfg.medicationTimes.length >= 3
+      ? cfg.medicationTimes.slice(0, 3)
+      : (typeof DEFAULT_MEDICATION_TIMES !== 'undefined' ? DEFAULT_MEDICATION_TIMES : ['09:00', '13:00', '20:00']);
+    const [tMorn, tNoon, tEvening] = times;
+
     const systemPrompt = `你是一个药品信息提取助手。从用户输入的自然语言药单中提取所有药品的结构化信息，返回 JSON 数组格式（即使只有一种药品也返回数组）。每个药品对象的字段说明：
 - name: 药品名称（字符串）
 - dose: 每次剂量数字（数字，如 2；若为半片则为 0.5）
 - unit: 剂量单位（片/粒/ml/mg/袋/支，默认"片"）
-- times: 每天服药时间数组，格式 "HH:MM"（如 ["07:00","12:00","18:00"]）
+- times: 每天服药时间数组，格式 "HH:MM"（如 ["${tMorn}","${tNoon}","${tEvening}"]）
 - quantity: 现有总数量（数字，没有则为 0）
 - notes: 备注说明（字符串，如特殊用法、减量方案等）
 
-常见时间映射：早上/早餐→07:00，中午/午餐→12:00，晚上/晚餐→18:00，睡前→22:00，每天三次→["07:00","12:00","18:00"]，每天两次→["08:00","20:00"]，每天一次→["08:00"]。
+用户当前配置的每日用药时间为：早上 ${tMorn}、中午 ${tNoon}、晚上 ${tEvening}。请优先使用这些时间。
+常见时间映射：早上/早餐→${tMorn}，中午/午餐→${tNoon}，晚上/晚餐→${tEvening}，睡前→22:00，每天三次→["${tMorn}","${tNoon}","${tEvening}"]，每天两次→["${tMorn}","${tEvening}"]，每天一次→["${tMorn}"]。
 对于非每日频率（如隔日一次、每3天一次、每周一次等），times 字段必须设为空数组 []，并在 notes 中完整描述用药频率（如"隔日口服"、"每3天服用1次"）。
 
-重要：药单中有多少种药品就提取多少个对象，不得遗漏任何一种。只返回 JSON 数组，不要任何解释。示例：[{"name":"药品A","dose":1,"unit":"片","times":["08:00"],"quantity":0,"notes":""}]`;
+重要：药单中有多少种药品就提取多少个对象，不得遗漏任何一种。只返回 JSON 数组，不要任何解释。示例：[{"name":"药品A","dose":1,"unit":"片","times":["${tMorn}"],"quantity":0,"notes":""}]`;
 
     const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -162,7 +170,13 @@ const AI = {
   },
 
   /* ── Rule-based fallback parser (Chinese) ── */
-  _ruleBased(text) {
+  _ruleBased(text, medicationTimes) {
+    // Use configured default times, fall back to DEFAULT_MEDICATION_TIMES
+    const defTimes = Array.isArray(medicationTimes) && medicationTimes.length >= 3
+      ? medicationTimes.slice(0, 3)
+      : (typeof DEFAULT_MEDICATION_TIMES !== 'undefined' ? DEFAULT_MEDICATION_TIMES : ['09:00', '13:00', '20:00']);
+    const [tMorn, tNoon, tEvening] = defTimes;
+
     const result = {
       name:     '',
       dose:     1,
@@ -203,16 +217,16 @@ const AI = {
 
     /* ── Times ── */
     const timeMap = {
-      '每天三次':  ['07:00', '12:00', '18:00'],
-      '一日三次':  ['07:00', '12:00', '18:00'],
-      '每日三次':  ['07:00', '12:00', '18:00'],
-      '每天两次':  ['08:00', '20:00'],
-      '一日两次':  ['08:00', '20:00'],
-      '每日两次':  ['08:00', '20:00'],
-      '每天一次':  ['08:00'],
-      '一日一次':  ['08:00'],
-      '每日一次':  ['08:00'],
-      '每天四次':  ['07:00', '11:00', '15:00', '21:00'],
+      '每天三次':  [tMorn, tNoon, tEvening],
+      '一日三次':  [tMorn, tNoon, tEvening],
+      '每日三次':  [tMorn, tNoon, tEvening],
+      '每天两次':  [tMorn, tEvening],
+      '一日两次':  [tMorn, tEvening],
+      '每日两次':  [tMorn, tEvening],
+      '每天一次':  [tMorn],
+      '一日一次':  [tMorn],
+      '每日一次':  [tMorn],
+      '每天四次':  [tMorn, tNoon, tEvening, '21:00'],
     };
     for (const [kw, times] of Object.entries(timeMap)) {
       if (text.includes(kw)) { result.times = [...times]; break; }
@@ -220,9 +234,9 @@ const AI = {
 
     /* specific time mentions override */
     const specificTimes = [];
-    if (/(早上|早餐|早饭|晨)/.test(text)) specificTimes.push('07:00');
-    if (/(中午|午餐|午饭)/.test(text))   specificTimes.push('12:00');
-    if (/(晚上|晚餐|晚饭)/.test(text))   specificTimes.push('18:00');
+    if (/(早上|早餐|早饭|晨)/.test(text)) specificTimes.push(tMorn);
+    if (/(中午|午餐|午饭)/.test(text))   specificTimes.push(tNoon);
+    if (/(晚上|晚餐|晚饭)/.test(text))   specificTimes.push(tEvening);
     if (/(睡前|睡觉前)/.test(text))      specificTimes.push('22:00');
     if (specificTimes.length) result.times = specificTimes;
 
@@ -233,7 +247,7 @@ const AI = {
     }
 
     /* default: three times a day */
-    if (!result.times.length) result.times = ['07:00', '12:00', '18:00'];
+    if (!result.times.length) result.times = [tMorn, tNoon, tEvening];
 
     /* ── Notes ── */
     const notesPatterns = [
