@@ -1,5 +1,5 @@
 /* Service Worker for 用药助手 PWA */
-const CACHE_NAME = 'medication-reminder-v6';
+const CACHE_NAME = 'medication-reminder-v7';
 
 /* Build absolute URLs relative to the SW scope so the app works
    from any subpath (e.g. GitHub Pages /repo-name/). */
@@ -15,6 +15,12 @@ const ASSET_PATHS = [
   './js/db.js',
   './js/ai.js',
   './js/app.js',
+  './icons/icon-16.png',
+  './icons/icon-32.png',
+  './icons/icon-48.png',
+  './icons/icon-72.png',
+  './icons/icon-96.png',
+  './icons/icon-144.png',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
