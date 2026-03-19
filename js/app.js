@@ -163,6 +163,10 @@ const App = {
     const patient = this.state.viewedPatient;
     if (!patient) return;
 
+    // Family members are read-only: only the patient's own device should create/modify
+    // records.  Records are propagated to family devices through sync.
+    if (this.state.activeUser?.role === 'family') return;
+
     const activeMeds = this.state.medications.filter((m) => m.active !== false && m.userId === patient.id);
     let changed = false;
 
@@ -172,8 +176,11 @@ const App = {
           (r) => r.medicationId === med.id && r.scheduledTime === t && r.date === today
         );
         if (!existing) {
+          // Use a deterministic ID so the same scheduled dose resolves to the same
+          // record ID on every device (preventing duplicates after cross-device sync).
+          const recId = `${patient.id}_${today}_${med.id}_${t.replace(':', '')}`;
           const rec = {
-            id:            genId(),
+            id:            recId,
             userId:        patient.id,
             medicationId:  med.id,
             date:          today,
@@ -423,14 +430,35 @@ const App = {
       familyCode = genFamilyCode();
     }
 
-    // Enforce 1 patient per family (local check)
+    // Enforce 1 patient per family — check both local DB and (when joining with syncUrl) the server
     if (this.state.selectedRole === 'patient') {
-      const existingPatient = this.state.users.find(
+      const existingLocalPatient = this.state.users.find(
         (u) => u.role === 'patient' && u.familyCode === familyCode
       );
-      if (existingPatient) {
+      if (existingLocalPatient) {
         showToast('该家庭已有一位患者，请以家庭成员身份加入', 'warn');
         return;
+      }
+
+      // When joining an existing family with a sync URL, also check remote for existing patients
+      if (this.state.joiningFamily && joinSyncUrl) {
+        try {
+          const checkResp = await fetch(`${joinSyncUrl}/family/${familyCode}`);
+          if (checkResp.ok) {
+            const remoteData = await checkResp.json();
+            const remotePatients = (Array.isArray(remoteData.users) ? remoteData.users : [])
+              .filter((u) => u.role === 'patient');
+            if (remotePatients.length > 0) {
+              showToast(
+                `该家庭（服务器）已有患者 ${remotePatients[0].name}，请以家庭成员身份加入`,
+                'warn'
+              );
+              return;
+            }
+          }
+        } catch (_) {
+          // Best-effort: if the server is unreachable, continue with local-only check
+        }
       }
     }
 
@@ -1652,9 +1680,14 @@ const App = {
    * @param {boolean} silent – suppress "nothing new" toast
    */
   async pullFamilySync(silent = false) {
+    // Prevent concurrent overlapping pulls (e.g. startup + periodic timer + manual)
+    if (this._syncInProgress) return;
+    this._syncInProgress = true;
+
     const syncUrl = this._validatedSyncUrl();
     const code    = this.state.activeUser?.familyCode;
     if (!syncUrl || !code) {
+      this._syncInProgress = false;
       if (!silent) showToast('请先配置有效的 HTTPS 同步服务地址', 'warn');
       return;
     }
@@ -1709,7 +1742,7 @@ const App = {
         // Apply remote if it doesn't exist locally, or if remote represents a more
         // complete state (e.g. taken > missed > pending), or is simply newer.
         const remoteTs = rr.updatedAt || rr.takenAt || 0;
-        const localTs  = local ? (local.updatedAt || local.takenAt || now) : -1;
+        const localTs  = local ? (local.updatedAt || local.takenAt || 0) : -1;
         if (!local || remoteOrder > localOrder || (remoteOrder === localOrder && remoteTs > localTs)) {
           await DB.saveRecord(rr);
         }
@@ -1758,6 +1791,8 @@ const App = {
     } catch (err) {
       console.warn('Family pull failed:', err);
       if (!silent) showToast('同步失败：' + err.message, 'error');
+    } finally {
+      this._syncInProgress = false;
     }
   },
 
