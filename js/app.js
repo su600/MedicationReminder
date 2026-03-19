@@ -82,6 +82,18 @@ const App = {
      ───────────────────────────────────────── */
   async loadSettings() {
     this.state.settings = await DB.getSettings();
+    // Migrate: if provider is a known preset but the stored URL/model no longer
+    // match the preset (e.g. from an older app version), silently fix them so
+    // the AI features point at the correct endpoint.
+    const s = this.state.settings;
+    if (s.apiProvider && s.apiProvider !== 'custom' && typeof AI_PRESETS !== 'undefined') {
+      const preset = AI_PRESETS[s.apiProvider];
+      if (preset && (s.apiBaseUrl !== preset.baseUrl || s.apiModel !== preset.model)) {
+        s.apiBaseUrl = preset.baseUrl;
+        s.apiModel   = preset.model;
+        await DB.saveSettings(s);
+      }
+    }
   },
 
   async loadUsers() {
@@ -654,6 +666,25 @@ const App = {
     const list  = document.getElementById('medicationList');
     const empty = document.getElementById('medicationsEmpty');
     if (!list) return;
+
+    const patient  = this.state.viewedPatient;
+    const isFamily = this.state.activeUser?.role === 'family';
+
+    // Family banner – same style as the Today tab banner
+    const section = list.closest('section') || list.parentElement;
+    const existingBanner = section?.querySelector('.family-view-banner');
+    if (existingBanner) existingBanner.remove();
+    if (isFamily && patient) {
+      const banner = document.createElement('div');
+      banner.className = 'family-view-banner';
+      banner.innerHTML = `
+        <span class="banner-icon">💞</span>
+        <div class="banner-text">
+          <div class="banner-title">正在查看 ${esc(patient.name)} 的药品清单</div>
+          <div class="banner-sub">家人关心，用药无忧</div>
+        </div>`;
+      list.parentElement.insertBefore(banner, list);
+    }
 
     const meds = this.state.medications.filter((m) => m.active !== false);
 
@@ -1402,7 +1433,8 @@ const App = {
       this.state.viewedPatient = activeUser;
       await this.loadTodayData();
     } else {
-      // Family-role user joined a family that has no patients on this device yet
+      // Family-role user joined a family that has no patients on this device yet.
+      // Keep the current view intact so the UI isn't abruptly cleared.
       this.state.viewedPatient = null;
       this.state.medications = [];
       this.state.records = [];
@@ -1413,6 +1445,10 @@ const App = {
     const memberCount = this.state.users.filter((u) => u.familyCode === code && u.id !== activeUser.id).length;
     if (memberCount > 0) {
       showToast(`已加入家庭 ${code}（共 ${memberCount + 1} 人）`, 'success');
+    } else if (activeUser.role === 'family') {
+      // No matching patient was found on this device; the family code is saved
+      // so a patient with this code added on the same browser will be linked automatically.
+      showToast(`家庭代码已保存为 ${code}，请在同一浏览器中添加对应的患者账号`, 'warn');
     } else {
       showToast(`家庭代码已更新为 ${code}`, 'success');
     }
