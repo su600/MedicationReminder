@@ -78,14 +78,14 @@
       "short_name": "今日",
       "description": "查看今日用药计划",
       "url": "./?tab=today",
-      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
+      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" }]
     },
     {
       "name": "添加药品",
       "short_name": "添加",
       "description": "添加新的药品提醒",
       "url": "./?tab=medications",
-      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96" }]
+      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" }]
     }
   ],
   "share_target": {
