@@ -71,6 +71,10 @@ const App = {
     } else {
       await this.setActiveUser(this.state.settings.activeUserId, false);
       this.showMainApp();
+      // Auto-pull family data on startup so returning users always get fresh data
+      if (this.state.settings.syncUrl) {
+        this.pullFamilySync(true);
+      }
     }
 
     // Clock ticker
@@ -175,7 +179,8 @@ const App = {
             date:          today,
             scheduledTime: t,
             status:        'pending',
-            takenAt:       null
+            takenAt:       null,
+            updatedAt:     Date.now()
           };
           await DB.saveRecord(rec);
           this.state.records.push(rec);
@@ -194,7 +199,8 @@ const App = {
         const [hour, min] = rec.scheduledTime.split(':').map(Number);
         const scheduledMs = new Date(year, month - 1, day, hour, min, 0).getTime();
         if (nowMs - scheduledMs > thresholdMs) {
-          rec.status = 'missed';
+          rec.status    = 'missed';
+          rec.updatedAt = Date.now();
           await DB.saveRecord(rec);
           changed = true;
         }
@@ -211,20 +217,24 @@ const App = {
     const rec = this.state.records.find((r) => r.id === recordId);
     if (!rec || rec.status === 'taken') return;
 
-    rec.status  = 'taken';
-    rec.takenAt = Date.now();
+    rec.status    = 'taken';
+    rec.takenAt   = Date.now();
+    rec.updatedAt = Date.now();
     await DB.saveRecord(rec);
 
     // Decrease medication quantity
     const med = this.state.medications.find((m) => m.id === rec.medicationId);
     if (med && med.quantity > 0) {
-      med.quantity = Math.max(0, med.quantity - (med.dose || 1));
+      med.quantity   = Math.max(0, med.quantity - (med.dose || 1));
+      med.updatedAt  = Date.now();
       await DB.saveMedication(med);
     }
 
     this.renderTodayTab();
     this.checkLowStock();
     showToast('已记录服药 ✓', 'success');
+    // Push updated record to sync server so family members see it immediately
+    this.pushFamilySync(true);
   },
 
   async handleExternalMark(data) {
@@ -388,12 +398,40 @@ const App = {
     if (!name) { showToast('请输入姓名', 'warn'); return; }
 
     let familyCode;
+    let joinSyncUrl = '';
     if (this.state.joiningFamily) {
       const entered = (document.getElementById('joinFamilyCodeInput')?.value || '').trim().toUpperCase();
       if (!entered) { showToast('请输入家庭代码', 'warn'); return; }
       familyCode = entered;
+      // Capture optional sync URL entered during join onboarding
+      const rawSyncUrl = (document.getElementById('joinSyncUrlInput')?.value || '').trim();
+      if (rawSyncUrl) {
+        try {
+          const u = new URL(rawSyncUrl);
+          if (u.protocol === 'https:') {
+            joinSyncUrl = rawSyncUrl.replace(/\/$/, '');
+          } else {
+            showToast('同步服务地址必须使用 HTTPS', 'warn');
+            return;
+          }
+        } catch (_) {
+          showToast('同步服务地址格式无效', 'warn');
+          return;
+        }
+      }
     } else {
       familyCode = genFamilyCode();
+    }
+
+    // Enforce 1 patient per family (local check)
+    if (this.state.selectedRole === 'patient') {
+      const existingPatient = this.state.users.find(
+        (u) => u.role === 'patient' && u.familyCode === familyCode
+      );
+      if (existingPatient) {
+        showToast('该家庭已有一位患者，请以家庭成员身份加入', 'warn');
+        return;
+      }
     }
 
     const user = {
@@ -407,12 +445,16 @@ const App = {
     await DB.saveUser(user);
     this.state.users.push(user);
 
+    // Save settings including syncUrl if provided during join
     this.state.settings.activeUserId = user.id;
+    if (joinSyncUrl) {
+      this.state.settings.syncUrl = joinSyncUrl;
+    }
     await DB.saveSettings(this.state.settings);
 
     this.state.activeUser = user;
     if (this.state.joiningFamily) {
-      // Set viewed patient to first patient in joined family (if any)
+      // Set viewed patient to first patient in joined family (if any local match)
       await this.loadUsers();
       const patients = this.state.users.filter(
         (u) => u.role === 'patient' && u.familyCode === familyCode
@@ -434,6 +476,11 @@ const App = {
     // Show confirmation after joining a family
     if (this.state.joiningFamily) {
       showToast(`已加入家庭 ${familyCode}`, 'success');
+      // Pull family data from server so this device immediately gets the patient's info
+      if (joinSyncUrl || this.state.settings.syncUrl) {
+        await this.pullFamilySync(true);
+        showToast('家庭数据已从服务器同步 ✓', 'success');
+      }
     }
 
     // Prompt to enable notifications
@@ -506,6 +553,13 @@ const App = {
     setInterval(async () => {
       await this.ensureTodayRecords();
       this.renderTodayTab();
+    }, 5 * 60 * 1000);
+
+    // Periodic background sync every 5 minutes when syncUrl is configured
+    setInterval(() => {
+      if (this.state.settings.syncUrl) {
+        this.pullFamilySync(true);
+      }
     }, 5 * 60 * 1000);
   },
 
@@ -1284,6 +1338,18 @@ const App = {
     if (!name) { showToast('请输入姓名', 'warn'); return; }
 
     const familyCode = this.state.activeUser?.familyCode || genFamilyCode();
+
+    // Enforce 1 patient per family
+    if (this.state.newUserRole === 'patient') {
+      const existingPatient = this.state.users.find(
+        (u) => u.role === 'patient' && u.familyCode === familyCode
+      );
+      if (existingPatient) {
+        showToast('该家庭已有一位患者（' + existingPatient.name + '），每个家庭只能有一位患者', 'warn');
+        return;
+      }
+    }
+
     const user = {
       id:         genId(),
       name,
@@ -1505,10 +1571,9 @@ const App = {
     const memberCount = this.state.users.filter((u) => u.familyCode === code && u.id !== activeUser.id).length;
     if (memberCount > 0) {
       showToast(`已加入家庭 ${code}（共 ${memberCount + 1} 人）`, 'success');
-    } else if (activeUser.role === 'family') {
-      // No matching patient was found on this device; the family code is saved
-      // so a patient with this code added on the same browser will be linked automatically.
-      showToast(`家庭代码已保存为 ${code}，请在同一浏览器中添加对应的患者账号`, 'warn');
+    } else if (activeUser.role === 'family' && !(this.state.settings.syncUrl || '').trim()) {
+      // No matching patient was found locally and no syncUrl configured
+      showToast(`家庭代码已保存为 ${code}。请配置同步服务地址以从其他设备拉取家庭成员数据`, 'warn');
     } else {
       showToast(`家庭代码已更新为 ${code}`, 'success');
     }
@@ -1537,7 +1602,7 @@ const App = {
   },
 
   /**
-   * Push local family data (users + medications + AI settings) to the sync server.
+   * Push local family data (users + medications + records + AI settings) to the sync server.
    * @param {boolean} silent – suppress success toast when called automatically
    */
   async pushFamilySync(silent = false) {
@@ -1547,14 +1612,18 @@ const App = {
 
     const allUsers = this.state.users.filter((u) => u.familyCode === code);
     const allMeds  = [];
+    const allRecords = [];
     for (const u of allUsers) {
       const meds = await DB.getMedicationsByUser(u.id);
       allMeds.push(...meds);
+      const recs = await DB.getRecordsByUser(u.id);
+      allRecords.push(...recs);
     }
 
     const payload = {
       users:       allUsers,
       medications: allMeds,
+      records:     allRecords,
       apiProvider: this.state.settings.apiProvider || 'github',
       apiBaseUrl:  this.state.settings.apiBaseUrl  || '',
       apiModel:    this.state.settings.apiModel     || '',
@@ -1577,7 +1646,9 @@ const App = {
 
   /**
    * Pull family data from the sync server and merge into local IndexedDB.
-   * Newer `updatedAt` wins. API Key is applied if local has none.
+   * Newer `updatedAt` wins for users/medications/records. API Key is applied if local has none.
+   * After merging, `viewedPatient` is updated so family-role users on new devices
+   * immediately see the patient's data that was just pulled from the server.
    * @param {boolean} silent – suppress "nothing new" toast
    */
   async pullFamilySync(silent = false) {
@@ -1627,6 +1698,23 @@ const App = {
         }
       }
 
+      // ── Merge records (status progression: pending < missed < taken) ──
+      const statusOrder = { pending: 0, missed: 1, taken: 2 };
+      const remoteRecords = Array.isArray(remote.records) ? remote.records : [];
+      for (const rr of remoteRecords) {
+        if (!rr.id || !rr.userId) continue;
+        const local = await DB.getRecord(rr.id);
+        const localOrder  = statusOrder[local?.status]  ?? 0;
+        const remoteOrder = statusOrder[rr.status]       ?? 0;
+        // Apply remote if it doesn't exist locally, or if remote represents a more
+        // complete state (e.g. taken > missed > pending), or is simply newer.
+        const remoteTs = rr.updatedAt || rr.takenAt || 0;
+        const localTs  = local ? (local.updatedAt || local.takenAt || now) : -1;
+        if (!local || remoteOrder > localOrder || (remoteOrder === localOrder && remoteTs > localTs)) {
+          await DB.saveRecord(rr);
+        }
+      }
+
       // ── Merge API settings (apply remote key if local has none) ──
       const s = this.state.settings;
       if (remote.apiKey && !s.apiKey) {
@@ -1641,6 +1729,28 @@ const App = {
 
       // ── Reload local state from DB ──
       await this.loadUsers();
+
+      // Update viewedPatient based on the newly merged data.
+      // This is critical for family-role users on a new device who join via family code:
+      // after pulling, the remote patient is now in the local DB but viewedPatient may
+      // still be null.  Find and assign the (unique) patient for this family.
+      if (this.state.activeUser) {
+        if (this.state.activeUser.role === 'patient') {
+          // Re-resolve the active patient in case their record was updated
+          this.state.viewedPatient = this.state.users.find(
+            (u) => u.id === this.state.activeUser.id
+          ) || this.state.activeUser;
+        } else {
+          // Family role: pick the first (and only) patient in this family
+          const patients = this.state.users.filter(
+            (u) => u.role === 'patient' && u.familyCode === code
+          );
+          if (patients.length > 0) {
+            this.state.viewedPatient = patients[0];
+          }
+        }
+      }
+
       await this.loadTodayData();
       this.renderAll();
 
