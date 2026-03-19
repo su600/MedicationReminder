@@ -229,8 +229,17 @@
           </div>
           <div class="settings-item">
             <span class="text-muted" style="font-size:0.9rem">
-              将此代码告诉家人，家人在同一浏览器或同一应用内注册时输入相同代码即可加入家庭，无需配置服务器
+              将此代码告诉家人，家人在同一浏览器内注册时输入相同代码即可加入家庭。配置同步服务地址后，可在不同设备间同步药单和 AI API Key。
             </span>
+          </div>
+          <div class="settings-item">
+            <span>同步服务地址</span>
+            <input type="url" id="syncUrlInput" placeholder="https://… （须为 HTTPS）"
+                   autocomplete="off" style="flex:1;margin-left:12px;font-size:0.9rem">
+          </div>
+          <div class="settings-item">
+            <span>跨设备同步药单 &amp; API Key</span>
+            <button class="btn-text" id="syncNowBtn">立即同步 ↻</button>
           </div>
           <div class="settings-item">
             <span>加入其他家庭</span>
@@ -456,7 +465,7 @@
   </div>
   <div class="modal-body">
     <p class="text-muted" style="margin-bottom:16px">
-      输入家庭代码后，您将与同一设备/浏览器上使用相同代码的患者共享药品数据。如需为家人配置 AI 功能，请在「设置 → AI 智能功能」中配置 API Key。
+      输入家庭代码后，将与该家庭成员共享药单数据。如已配置同步服务地址，将自动从服务器拉取对方的药单和 AI API Key。
     </p>
     <div class="form-group">
       <label>家庭代码</label>

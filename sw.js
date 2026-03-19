@@ -1,5 +1,5 @@
 /* Service Worker for 用药助手 PWA */
-const CACHE_NAME = 'medication-reminder-v9';
+const CACHE_NAME = 'medication-reminder-v10';
 
 /* Build absolute URLs relative to the SW scope so the app works
    from any subpath (e.g. GitHub Pages /repo-name/). */

@@ -166,6 +166,7 @@ function getDefaultSettings() {
     apiBaseUrl:      'https://models.inference.ai.azure.com',
     apiKey:          '',
     apiModel:        'gemini-3-flash',
+    syncUrl:         '',
     activeUserId:    null,
     defaultTimes:    DEFAULT_MEDICATION_TIMES.slice()
   };
