@@ -6,6 +6,9 @@
 const DB_NAME = 'MedicationReminderDB';
 const DB_VERSION = 1;
 
+/** Default three-times-a-day medication schedule (morning / noon / evening) */
+const DEFAULT_MEDICATION_TIMES = ['09:00', '13:00', '20:00'];
+
 let _db = null;
 
 function openDB() {
@@ -162,6 +165,8 @@ function getDefaultSettings() {
     apiBaseUrl:      'https://api.openai.com/v1',
     apiKey:          '',
     apiModel:        'gpt-3.5-turbo',
-    activeUserId:    null
+    activeUserId:    null,
+    defaultTimes:    DEFAULT_MEDICATION_TIMES.slice(),
+    syncUrl:         ''
   };
 }
