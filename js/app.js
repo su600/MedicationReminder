@@ -82,6 +82,39 @@ const App = {
      ───────────────────────────────────────── */
   async loadSettings() {
     this.state.settings = await DB.getSettings();
+    // Migrate legacy installs: ensure apiProvider is set and preset URLs are current.
+    const s = this.state.settings;
+    let needSave = false;
+
+    // 1. If apiProvider is missing entirely, detect legacy OpenAI URL and
+    //    rewrite to the github preset; otherwise just default to 'github'.
+    if (!s.apiProvider) {
+      const legacyOpenAiUrls = ['https://api.openai.com', 'https://api.openai.com/v1'];
+      const legacyModels     = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4o', 'gpt-4o-mini'];
+      if (legacyOpenAiUrls.some((u) => (s.apiBaseUrl || '').startsWith(u)) ||
+          legacyModels.includes(s.apiModel || '')) {
+        // Was pointing at legacy OpenAI – redirect to GitHub Models
+        s.apiProvider = 'github';
+        s.apiBaseUrl  = AI_PRESETS.github.baseUrl;
+        s.apiModel    = AI_PRESETS.github.model;
+      } else {
+        s.apiProvider = 'github';
+      }
+      needSave = true;
+    }
+
+    // 2. If provider is a known preset but URL/model drifted (stale from older
+    //    version), silently realign them so AI features point at the right endpoint.
+    if (s.apiProvider !== 'custom' && typeof AI_PRESETS !== 'undefined') {
+      const preset = AI_PRESETS[s.apiProvider];
+      if (preset && (s.apiBaseUrl !== preset.baseUrl || s.apiModel !== preset.model)) {
+        s.apiBaseUrl = preset.baseUrl;
+        s.apiModel   = preset.model;
+        needSave = true;
+      }
+    }
+
+    if (needSave) await DB.saveSettings(s);
   },
 
   async loadUsers() {
@@ -655,6 +688,25 @@ const App = {
     const empty = document.getElementById('medicationsEmpty');
     if (!list) return;
 
+    const patient  = this.state.viewedPatient;
+    const isFamily = this.state.activeUser?.role === 'family';
+
+    // Family banner – same style as the Today tab banner
+    const section = list.closest('section') || list.parentElement;
+    const existingBanner = section?.querySelector('.family-view-banner');
+    if (existingBanner) existingBanner.remove();
+    if (isFamily && patient) {
+      const banner = document.createElement('div');
+      banner.className = 'family-view-banner';
+      banner.innerHTML = `
+        <span class="banner-icon">💞</span>
+        <div class="banner-text">
+          <div class="banner-title">正在查看 ${esc(patient.name)} 的药品清单</div>
+          <div class="banner-sub">家人关心，用药无忧</div>
+        </div>`;
+      list.parentElement.insertBefore(banner, list);
+    }
+
     const meds = this.state.medications.filter((m) => m.active !== false);
 
     if (meds.length === 0) {
@@ -864,6 +916,8 @@ const App = {
     this.checkLowStock();
     this.closeMedicationModal();
     showToast(isNew ? '药品添加成功' : '药品已更新', 'success');
+    // Auto-push to sync server in the background
+    this.pushFamilySync(true);
   },
 
   async deleteMedication(medId) {
@@ -874,6 +928,7 @@ const App = {
     this.state.records = this.state.records.filter((r) => r.medicationId !== medId);
     this.renderAll();
     showToast('药品已删除');
+    this.pushFamilySync(true);
   },
 
   /* ─────────────────────────────────────────
@@ -1095,6 +1150,10 @@ const App = {
     const fcEl = document.getElementById('familyCode');
     if (fcEl) fcEl.textContent = this.state.activeUser?.familyCode || '—';
 
+    // Sync URL
+    const syncUrlInp = document.getElementById('syncUrlInput');
+    if (syncUrlInp) syncUrlInp.value = this.state.settings.syncUrl || '';
+
     // Notification toggle
     const notifToggle = document.getElementById('notificationToggle');
     if (notifToggle) notifToggle.checked = this.state.settings.notifications;
@@ -1169,6 +1228,30 @@ const App = {
     if (notifToggle) this.state.settings.notifications   = notifToggle.checked;
     if (aiToggle)    this.state.settings.aiEnabled       = aiToggle.checked;
     if (advSel)      this.state.settings.reminderAdvance = parseInt(advSel.value);
+
+    // Sync URL – validate HTTPS if non-empty
+    const syncUrlInp = document.getElementById('syncUrlInput');
+    if (syncUrlInp) {
+      const rawUrl = syncUrlInp.value.trim();
+      if (rawUrl) {
+        try {
+          const u = new URL(rawUrl);
+          if (u.protocol !== 'https:') {
+            showToast('同步服务地址必须使用 HTTPS，以保护 API Key 安全', 'warn');
+            syncUrlInp.value = '';
+            this.state.settings.syncUrl = '';
+          } else {
+            this.state.settings.syncUrl = rawUrl;
+          }
+        } catch (_) {
+          showToast('同步服务地址格式无效', 'warn');
+          syncUrlInp.value = '';
+          this.state.settings.syncUrl = '';
+        }
+      } else {
+        this.state.settings.syncUrl = '';
+      }
+    }
 
     // Collect default times from the 3 selects (if present)
     const timeSelects = document.querySelectorAll('.default-time-select');
@@ -1347,6 +1430,8 @@ const App = {
     this._updateChatFabVisibility();
     this.closeApiKeyModal();
     showToast('AI 配置已保存', 'success');
+    // Push updated API key to sync server in the background
+    this.pushFamilySync(true);
   },
 
   /* Update the provider label in settings and chat header */
@@ -1402,7 +1487,8 @@ const App = {
       this.state.viewedPatient = activeUser;
       await this.loadTodayData();
     } else {
-      // Family-role user joined a family that has no patients on this device yet
+      // Family-role user joined a family that has no patients on this device yet.
+      // Clear the viewed patient and medication data since there is nothing to show.
       this.state.viewedPatient = null;
       this.state.medications = [];
       this.state.records = [];
@@ -1410,11 +1496,158 @@ const App = {
 
     this.renderAll();
     this.closeJoinFamilyModal();
+
+    // Auto-pull from sync server so remote family data is immediately available
+    if ((this.state.settings.syncUrl || '').trim()) {
+      await this.pullFamilySync(true);
+    }
+
     const memberCount = this.state.users.filter((u) => u.familyCode === code && u.id !== activeUser.id).length;
     if (memberCount > 0) {
       showToast(`已加入家庭 ${code}（共 ${memberCount + 1} 人）`, 'success');
+    } else if (activeUser.role === 'family') {
+      // No matching patient was found on this device; the family code is saved
+      // so a patient with this code added on the same browser will be linked automatically.
+      showToast(`家庭代码已保存为 ${code}，请在同一浏览器中添加对应的患者账号`, 'warn');
     } else {
       showToast(`家庭代码已更新为 ${code}`, 'success');
+    }
+  },
+
+  /* ─────────────────────────────────────────
+     FAMILY SYNC (cross-device via syncUrl)
+     ─────────────────────────────────────────
+     Protocol: REST endpoint at ${syncUrl}/family/${code}
+       GET  → { users, medications, apiProvider, apiBaseUrl, apiModel, apiKey }
+       POST ← same structure
+     Only HTTPS sync URLs are accepted to protect API keys in transit.
+     ───────────────────────────────────────── */
+
+  /** Return the validated HTTPS sync URL, or null if invalid/absent. */
+  _validatedSyncUrl() {
+    const raw = (this.state.settings.syncUrl || '').trim();
+    if (!raw) return null;
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== 'https:') return null;
+      return raw.replace(/\/$/, ''); // strip trailing slash
+    } catch (_) {
+      return null;
+    }
+  },
+
+  /**
+   * Push local family data (users + medications + AI settings) to the sync server.
+   * @param {boolean} silent – suppress success toast when called automatically
+   */
+  async pushFamilySync(silent = false) {
+    const syncUrl = this._validatedSyncUrl();
+    const code    = this.state.activeUser?.familyCode;
+    if (!syncUrl || !code) return;
+
+    const allUsers = this.state.users.filter((u) => u.familyCode === code);
+    const allMeds  = [];
+    for (const u of allUsers) {
+      const meds = await DB.getMedicationsByUser(u.id);
+      allMeds.push(...meds);
+    }
+
+    const payload = {
+      users:       allUsers,
+      medications: allMeds,
+      apiProvider: this.state.settings.apiProvider || 'github',
+      apiBaseUrl:  this.state.settings.apiBaseUrl  || '',
+      apiModel:    this.state.settings.apiModel     || '',
+      apiKey:      this.state.settings.apiKey       || ''
+    };
+
+    try {
+      const resp = await fetch(`${syncUrl}/family/${code}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!silent) showToast('数据已同步到服务器 ✓', 'success');
+    } catch (err) {
+      console.warn('Family push failed:', err);
+      if (!silent) showToast('同步失败：' + err.message, 'error');
+    }
+  },
+
+  /**
+   * Pull family data from the sync server and merge into local IndexedDB.
+   * Newer `updatedAt` wins. API Key is applied if local has none.
+   * @param {boolean} silent – suppress "nothing new" toast
+   */
+  async pullFamilySync(silent = false) {
+    const syncUrl = this._validatedSyncUrl();
+    const code    = this.state.activeUser?.familyCode;
+    if (!syncUrl || !code) {
+      if (!silent) showToast('请先配置有效的 HTTPS 同步服务地址', 'warn');
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${syncUrl}/family/${code}`);
+      if (resp.status === 404) {
+        // Nothing on server yet; push local data so others can pull
+        await this.pushFamilySync(true);
+        if (!silent) showToast('首次同步：本地数据已上传 ✓', 'success');
+        return;
+      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      const remote = await resp.json();
+      const now = Date.now();
+
+      // ── Merge users ──
+      const remoteUsers = Array.isArray(remote.users) ? remote.users : [];
+      for (const ru of remoteUsers) {
+        if (!ru.id || !ru.name) continue;
+        const local = await DB.getUser(ru.id);
+        // Treat missing updatedAt as current time for local, 0 for remote to
+        // avoid unintentionally overwriting local data that predates timestamps.
+        const localTs  = local ? (local.updatedAt  || now) : -1;
+        const remoteTs = ru.updatedAt || 0;
+        if (!local || remoteTs > localTs) {
+          await DB.saveUser(ru);
+        }
+      }
+
+      // ── Merge medications ──
+      const remoteMeds = Array.isArray(remote.medications) ? remote.medications : [];
+      for (const rm of remoteMeds) {
+        if (!rm.id || !rm.userId) continue;
+        const local = await DB.getMedication(rm.id);
+        const localTs  = local ? (local.updatedAt  || now) : -1;
+        const remoteTs = rm.updatedAt || 0;
+        if (!local || remoteTs > localTs) {
+          await DB.saveMedication(rm);
+        }
+      }
+
+      // ── Merge API settings (apply remote key if local has none) ──
+      const s = this.state.settings;
+      if (remote.apiKey && !s.apiKey) {
+        s.apiProvider = remote.apiProvider || s.apiProvider;
+        s.apiBaseUrl  = remote.apiBaseUrl  || s.apiBaseUrl;
+        s.apiModel    = remote.apiModel    || s.apiModel;
+        s.apiKey      = remote.apiKey;
+        await DB.saveSettings(s);
+        this._updateProviderDisplay();
+        this._updateChatFabVisibility();
+      }
+
+      // ── Reload local state from DB ──
+      await this.loadUsers();
+      await this.loadTodayData();
+      this.renderAll();
+
+      if (!silent) showToast('同步完成 ✓', 'success');
+    } catch (err) {
+      console.warn('Family pull failed:', err);
+      if (!silent) showToast('同步失败：' + err.message, 'error');
     }
   },
 
@@ -1661,6 +1894,13 @@ const App = {
     document.getElementById('closeJoinFamilyModal')?.addEventListener('click', () => this.closeJoinFamilyModal());
     document.getElementById('cancelJoinFamilyBtn')?.addEventListener('click', () => this.closeJoinFamilyModal());
     document.getElementById('saveJoinFamilyBtn')?.addEventListener('click', () => this.saveJoinFamily());
+
+    // Sync now button
+    document.getElementById('syncNowBtn')?.addEventListener('click', async () => {
+      // Save syncUrl first (in case user just typed it)
+      await this.saveSettings();
+      await this.pullFamilySync(false);
+    });
 
     // Copy family code
     document.getElementById('copyFamilyCodeBtn')?.addEventListener('click', async () => {

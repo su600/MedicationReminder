@@ -162,9 +162,11 @@ function getDefaultSettings() {
     notifications:   true,
     reminderAdvance: 10,
     aiEnabled:       false,
-    apiBaseUrl:      'https://api.openai.com/v1',
+    apiProvider:     'github',
+    apiBaseUrl:      'https://models.inference.ai.azure.com',
     apiKey:          '',
-    apiModel:        'gpt-3.5-turbo',
+    apiModel:        'gemini-3-flash',
+    syncUrl:         '',
     activeUserId:    null,
     defaultTimes:    DEFAULT_MEDICATION_TIMES.slice()
   };
