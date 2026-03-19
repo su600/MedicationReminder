@@ -166,7 +166,6 @@ function getDefaultSettings() {
     apiKey:          '',
     apiModel:        'gpt-3.5-turbo',
     activeUserId:    null,
-    defaultTimes:    DEFAULT_MEDICATION_TIMES.slice(),
-    syncUrl:         ''
+    defaultTimes:    DEFAULT_MEDICATION_TIMES.slice()
   };
 }
