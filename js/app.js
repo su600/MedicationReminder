@@ -368,7 +368,8 @@ const App = {
       name,
       role:       this.state.selectedRole,
       familyCode,
-      createdAt:  Date.now()
+      createdAt:  Date.now(),
+      updatedAt:  Date.now()
     };
     await DB.saveUser(user);
     this.state.users.push(user);
@@ -844,7 +845,7 @@ const App = {
       ? { id: genId(), userId, createdAt: Date.now() }
       : { ...(this.state.medications.find((m) => m.id === this.state.editingMedId) || { id: this.state.editingMedId }) };
 
-    Object.assign(med, { name, dose, unit, times, quantity, notes, active: true });
+    Object.assign(med, { name, dose, unit, times, quantity, notes, active: true, updatedAt: Date.now() });
     await DB.saveMedication(med);
 
     if (isNew) {
@@ -950,6 +951,7 @@ const App = {
             id:        genId(),
             userId,
             createdAt: Date.now(),
+            updatedAt: Date.now(),
             name:      result.name,
             dose:      parseFloat(result.dose) || 1,
             unit:      result.unit || '片',
@@ -981,6 +983,7 @@ const App = {
             id:        genId(),
             userId,
             createdAt: Date.now(),
+            updatedAt: Date.now(),
             name:      result.name,
             dose:      parseFloat(result.dose) || 1,
             unit:      result.unit || '片',
@@ -1211,7 +1214,8 @@ const App = {
       name,
       role:       this.state.newUserRole,
       familyCode,
-      createdAt:  Date.now()
+      createdAt:  Date.now(),
+      updatedAt:  Date.now()
     };
     await DB.saveUser(user);
     this.state.users.push(user);
@@ -1392,6 +1396,7 @@ const App = {
     if (!activeUser) return;
 
     activeUser.familyCode = code;
+    activeUser.updatedAt  = Date.now();
     await DB.saveUser(activeUser);
 
     // Try to pull family data from sync server
@@ -1441,33 +1446,37 @@ const App = {
     const code = (familyCode || this.state.activeUser?.familyCode || '').toUpperCase();
     if (!code) return false;
     try {
-      const resp = await fetch(`${syncUrl.replace(/\/$/, '')}/family/${code}`, {
+      const resp = await fetch(`${syncUrl.replace(/\/$/, '')}/family/${encodeURIComponent(code)}`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Accept': 'application/json' }
       });
       if (!resp.ok) {
         if (resp.status !== 404) console.warn('Sync pull failed:', resp.status);
         return false;
       }
       const data = await resp.json();
-      // Merge remote users (skip if local id already exists with same or newer createdAt)
+      // Merge remote users: prefer remote when its updatedAt (falling back to createdAt) is newer
       if (Array.isArray(data.users)) {
         const localUsers = await DB.getUsers();
         const localById = Object.fromEntries(localUsers.map((u) => [u.id, u]));
         for (const remoteUser of data.users) {
           const local = localById[remoteUser.id];
-          if (!local || (remoteUser.updatedAt || 0) > (local.updatedAt || 0)) {
+          const remoteTs = remoteUser.updatedAt || remoteUser.createdAt || 0;
+          const localTs  = local ? (local.updatedAt || local.createdAt || 0) : -1;
+          if (!local || remoteTs > localTs) {
             await DB.saveUser(remoteUser);
           }
         }
       }
-      // Merge remote medications (skip if local id already exists with same or newer updatedAt)
+      // Merge remote medications: prefer remote when its updatedAt (falling back to createdAt) is newer
       if (Array.isArray(data.medications)) {
         const localMeds = await DB.getMedications();
         const localById = Object.fromEntries(localMeds.map((m) => [m.id, m]));
         for (const remoteMed of data.medications) {
           const local = localById[remoteMed.id];
-          if (!local || (remoteMed.updatedAt || 0) > (local.updatedAt || 0)) {
+          const remoteTs = remoteMed.updatedAt || remoteMed.createdAt || 0;
+          const localTs  = local ? (local.updatedAt || local.createdAt || 0) : -1;
+          if (!local || remoteTs > localTs) {
             await DB.saveMedication(remoteMed);
           }
         }
@@ -1491,8 +1500,7 @@ const App = {
       // Collect medications for all users in this family
       const medsArrays = await Promise.all(familyUsers.map((u) => DB.getMedicationsByUser(u.id)));
       const familyMeds = medsArrays.flat();
-      const resp = await fetch(`${syncUrl.replace(/\/$/, '')}/family/${code}`, {
-        method: 'POST',
+      const resp = await fetch(`${syncUrl.replace(/\/$/, '')}/family/${encodeURIComponent(code)}`, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ users: familyUsers, medications: familyMeds })
       });
@@ -1520,11 +1528,18 @@ const App = {
     try {
       const pulled = await this._pullFamilyData(code);
       const pushed = await this._pushFamilyData(code);
-      if (pulled || pushed) {
+      if (pulled && pushed) {
         await this.loadUsers();
         await this.loadTodayData();
         this.renderAll();
         showToast('家庭数据同步成功 ✓', 'success');
+      } else if (pulled) {
+        await this.loadUsers();
+        await this.loadTodayData();
+        this.renderAll();
+        showToast('已拉取远程数据，但上传本地数据失败，请稍后重试', 'warn');
+      } else if (pushed) {
+        showToast('已上传本地数据，但拉取远程数据失败，请稍后重试', 'warn');
       } else {
         showToast('同步失败，请检查同步服务器地址是否正确', 'error');
       }
