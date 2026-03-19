@@ -379,8 +379,6 @@ const App = {
 
     this.state.activeUser = user;
     if (this.state.joiningFamily) {
-      // Try to pull family data from sync server first
-      await this._pullFamilyData(familyCode);
       // Set viewed patient to first patient in joined family (if any)
       await this.loadUsers();
       const patients = this.state.users.filter(
@@ -400,9 +398,9 @@ const App = {
     document.getElementById('onboarding').classList.add('hidden');
     this.showMainApp();
 
-    // Show sync prompt if no sync URL is configured and user is joining a family
-    if (this.state.joiningFamily && !this.state.settings.syncUrl) {
-      showToast(`已加入家庭 ${familyCode}。如需跨设备同步数据，请在设置中配置同步服务器`, 'info');
+    // Show confirmation after joining a family
+    if (this.state.joiningFamily) {
+      showToast(`已加入家庭 ${familyCode}`, 'success');
     }
 
     // Prompt to enable notifications
@@ -1145,10 +1143,6 @@ const App = {
       });
     }
 
-    // Sync URL
-    const syncUrlEl = document.getElementById('syncUrlInput');
-    if (syncUrlEl) syncUrlEl.value = this.state.settings.syncUrl || '';
-
     // Default medication times
     const defTimes = this.state.settings.defaultTimes || DEFAULT_MEDICATION_TIMES;
     const timeSelects = document.querySelectorAll('.default-time-select');
@@ -1172,11 +1166,9 @@ const App = {
     const notifToggle = document.getElementById('notificationToggle');
     const aiToggle    = document.getElementById('aiToggle');
     const advSel      = document.getElementById('reminderAdvance');
-    const syncUrlEl   = document.getElementById('syncUrlInput');
     if (notifToggle) this.state.settings.notifications   = notifToggle.checked;
     if (aiToggle)    this.state.settings.aiEnabled       = aiToggle.checked;
     if (advSel)      this.state.settings.reminderAdvance = parseInt(advSel.value);
-    if (syncUrlEl)   this.state.settings.syncUrl         = syncUrlEl.value.trim();
 
     // Collect default times from the 3 selects (if present)
     const timeSelects = document.querySelectorAll('.default-time-select');
@@ -1399,9 +1391,6 @@ const App = {
     activeUser.updatedAt  = Date.now();
     await DB.saveUser(activeUser);
 
-    // Try to pull family data from sync server
-    await this._pullFamilyData(code);
-
     await this.loadUsers();
     const patients = this.state.users.filter(
       (u) => u.role === 'patient' && u.familyCode === code
@@ -1424,127 +1413,8 @@ const App = {
     const memberCount = this.state.users.filter((u) => u.familyCode === code && u.id !== activeUser.id).length;
     if (memberCount > 0) {
       showToast(`已加入家庭 ${code}（共 ${memberCount + 1} 人）`, 'success');
-    } else if (this.state.settings.syncUrl) {
-      showToast(`家庭代码已更新为 ${code}，正在同步数据…`, 'success');
     } else {
-      showToast(`家庭代码已更新为 ${code}。如需跨设备同步，请在设置中配置同步服务器`, 'info');
-    }
-  },
-
-  /* ─────────────────────────────────────────
-     FAMILY SYNC
-     ─────────────────────────────────────────
-     Uses a configurable sync server with a simple REST API:
-       GET  {syncUrl}/family/{code}  → { users, medications }
-       POST {syncUrl}/family/{code}  ← { users, medications }
-     ───────────────────────────────────────── */
-
-  /** Pull family data from sync server and merge into local DB */
-  async _pullFamilyData(familyCode) {
-    const syncUrl = this.state.settings.syncUrl;
-    if (!syncUrl) return false;
-    const code = (familyCode || this.state.activeUser?.familyCode || '').toUpperCase();
-    if (!code) return false;
-    try {
-      const resp = await fetch(`${syncUrl.replace(/\/$/, '')}/family/${encodeURIComponent(code)}`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!resp.ok) {
-        if (resp.status !== 404) console.warn('Sync pull failed:', resp.status);
-        return false;
-      }
-      const data = await resp.json();
-      // Merge remote users: prefer remote when its updatedAt (falling back to createdAt) is newer
-      if (Array.isArray(data.users)) {
-        const localUsers = await DB.getUsers();
-        const localById = Object.fromEntries(localUsers.map((u) => [u.id, u]));
-        for (const remoteUser of data.users) {
-          const local = localById[remoteUser.id];
-          const remoteTs = remoteUser.updatedAt || remoteUser.createdAt || 0;
-          const localTs  = local ? (local.updatedAt || local.createdAt || 0) : -1;
-          if (!local || remoteTs > localTs) {
-            await DB.saveUser(remoteUser);
-          }
-        }
-      }
-      // Merge remote medications: prefer remote when its updatedAt (falling back to createdAt) is newer
-      if (Array.isArray(data.medications)) {
-        const localMeds = await DB.getMedications();
-        const localById = Object.fromEntries(localMeds.map((m) => [m.id, m]));
-        for (const remoteMed of data.medications) {
-          const local = localById[remoteMed.id];
-          const remoteTs = remoteMed.updatedAt || remoteMed.createdAt || 0;
-          const localTs  = local ? (local.updatedAt || local.createdAt || 0) : -1;
-          if (!local || remoteTs > localTs) {
-            await DB.saveMedication(remoteMed);
-          }
-        }
-      }
-      return true;
-    } catch (err) {
-      console.warn('Sync pull error:', err.message);
-      return false;
-    }
-  },
-
-  /** Push local family data to sync server */
-  async _pushFamilyData(familyCode) {
-    const syncUrl = this.state.settings.syncUrl;
-    if (!syncUrl) return false;
-    const code = (familyCode || this.state.activeUser?.familyCode || '').toUpperCase();
-    if (!code) return false;
-    try {
-      const allUsers = await DB.getUsers();
-      const familyUsers = allUsers.filter((u) => u.familyCode === code);
-      // Collect medications for all users in this family
-      const medsArrays = await Promise.all(familyUsers.map((u) => DB.getMedicationsByUser(u.id)));
-      const familyMeds = medsArrays.flat();
-      const resp = await fetch(`${syncUrl.replace(/\/$/, '')}/family/${encodeURIComponent(code)}`, {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ users: familyUsers, medications: familyMeds })
-      });
-      return resp.ok;
-    } catch (err) {
-      console.warn('Sync push error:', err.message);
-      return false;
-    }
-  },
-
-  /** Manual sync: pull then push family data */
-  async syncFamilyData() {
-    const syncUrl = this.state.settings.syncUrl;
-    if (!syncUrl) {
-      showToast('请先在设置中配置同步服务器地址', 'warn');
-      return;
-    }
-    const code = this.state.activeUser?.familyCode;
-    if (!code) {
-      showToast('当前用户没有家庭代码', 'warn');
-      return;
-    }
-    const syncBtn = document.getElementById('syncFamilyBtn');
-    if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = '同步中…'; }
-    try {
-      const pulled = await this._pullFamilyData(code);
-      const pushed = await this._pushFamilyData(code);
-      if (pulled && pushed) {
-        await this.loadUsers();
-        await this.loadTodayData();
-        this.renderAll();
-        showToast('家庭数据同步成功 ✓', 'success');
-      } else if (pulled) {
-        await this.loadUsers();
-        await this.loadTodayData();
-        this.renderAll();
-        showToast('已拉取远程数据，但上传本地数据失败，请稍后重试', 'warn');
-      } else if (pushed) {
-        showToast('已上传本地数据，但拉取远程数据失败，请稍后重试', 'warn');
-      } else {
-        showToast('同步失败，请检查同步服务器地址是否正确', 'error');
-      }
-    } finally {
-      if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = '立即同步'; }
+      showToast(`家庭代码已更新为 ${code}`, 'success');
     }
   },
 
@@ -1847,10 +1717,6 @@ const App = {
     document.querySelectorAll('.default-time-select').forEach((sel) => {
       sel.addEventListener('change', () => this.saveSettings());
     });
-
-    // Sync URL – save on blur; sync button
-    document.getElementById('syncUrlInput')?.addEventListener('change', () => this.saveSettings());
-    document.getElementById('syncFamilyBtn')?.addEventListener('click', () => this.syncFamilyData());
 
     // Low stock close
     document.getElementById('closeLowStockAlert').addEventListener('click', () => {
