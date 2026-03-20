@@ -75,6 +75,10 @@
         <input type="text" id="joinFamilyCodeInput" placeholder="输入家庭代码（如 ABC123）"
                maxlength="6" autocomplete="off" style="text-transform:uppercase">
         <p class="form-hint">由家庭成员共享的唯一代码</p>
+        <label style="margin-top:10px">同步服务地址（可选）</label>
+        <input type="url" id="joinSyncUrlInput" placeholder="https://… （须为 HTTPS）"
+               autocomplete="off">
+        <p class="form-hint">填写后将自动从服务器拉取家庭成员的药单数据</p>
       </div>
 
       <button class="btn-primary btn-large" id="startBtn">开始使用 →</button>
@@ -229,7 +233,7 @@
           </div>
           <div class="settings-item">
             <span class="text-muted" style="font-size:0.9rem">
-              将此代码告诉家人，家人在同一浏览器内注册时输入相同代码即可加入家庭。配置同步服务地址后，可在不同设备间同步药单和 AI API Key。
+              将家庭代码告诉家人，并配置同步服务地址。家人在新设备上输入相同代码和服务地址后即可拉取药单、服药记录及 AI API Key。每个家庭只能有一位患者，家庭成员可查看患者的用药情况但无法勾选服药。
             </span>
           </div>
           <div class="settings-item">
@@ -238,7 +242,7 @@
                    autocomplete="off" style="flex:1;margin-left:12px;font-size:0.9rem">
           </div>
           <div class="settings-item">
-            <span>跨设备同步药单 &amp; API Key</span>
+            <span>跨设备同步药单、记录 &amp; API Key</span>
             <button class="btn-text" id="syncNowBtn">立即同步 ↻</button>
           </div>
           <div class="settings-item">
