@@ -76,6 +76,21 @@ docker run -d -p 8080:8080 --name medication-reminder medication-reminder
 - **Android（Chrome）**：点击菜单 → 添加到主屏幕。
 - **桌面（Chrome / Edge）**：点击地址栏右侧的安装图标。
 
+### 构建 Android 安装包（Cordova）
+
+项目已支持通过 Cordova 将当前 Web 代码封装为 Android App（APK）：
+
+```bash
+npm install
+npm run android:init
+npm run android:build:debug
+```
+
+构建完成后，可在 `android-build/platforms/android/app/build/outputs/apk/debug/` 下找到调试安装包。
+当前 Android 封装配置最低支持 Android 7.0（API 24）。
+Android 封装默认允许 HTTPS 网络访问，并额外放行 `http://localhost` / `http://127.0.0.1`，便于本机调试自定义 AI / 同步服务；正式环境仍建议使用 HTTPS。
+`npm run android:init` 使用了 `rm/cp` 命令，需在 Linux/macOS 或 Windows + WSL 环境执行。
+
 ### 文件结构
 
 ```
@@ -164,6 +179,22 @@ Then open `http://localhost:8080` in your browser to access the app.
 - **Android (Chrome)**: Tap the menu → Add to Home Screen.
 - **Desktop (Chrome / Edge)**: Click the install icon in the address bar.
 
+### Build Android App Package (Cordova)
+
+The project now supports packaging the existing web app into an Android APK with Cordova:
+
+```bash
+npm install
+npm run android:init
+npm run android:build:debug
+```
+
+After building, the debug APK is generated under
+`android-build/platforms/android/app/build/outputs/apk/debug/`.
+The current Android wrapper configuration requires Android 7.0+ (API 24).
+The Android wrapper allows HTTPS by default, and also permits `http://localhost` / `http://127.0.0.1` for local debugging of custom AI/family sync endpoints. Use HTTPS endpoints for production.
+`npm run android:init` uses `rm/cp`, so run it on Linux/macOS or Windows with WSL.
+
 ### Project Structure
 
 ```
@@ -184,4 +215,3 @@ MedicationReminder/
 ### License
 
 This project is open source. Feel free to use, modify, and distribute it.
-
