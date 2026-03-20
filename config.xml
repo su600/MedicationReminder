@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.medicationreminder.app"
+        version="1.0.0"
+        xmlns="http://www.w3.org/ns/widgets"
+        xmlns:cdv="http://cordova.apache.org/ns/1.0">
+  <name>用药助手</name>
+  <description>智能药物提醒系统，支持多用户，守护家人健康</description>
+  <author email="support@example.com">MedicationReminder</author>
+
+  <content src="index.html" />
+  <access origin="https://*/*" />
+
+  <preference name="Orientation" value="portrait" />
+  <preference name="AndroidXEnabled" value="true" />
+  <preference name="android-minSdkVersion" value="24" />
+
+  <platform name="android">
+    <icon density="mdpi" src="www/icons/icon-48.png" />
+    <icon density="hdpi" src="www/icons/icon-72.png" />
+    <icon density="xhdpi" src="www/icons/icon-96.png" />
+    <icon density="xxhdpi" src="www/icons/icon-144.png" />
+    <icon density="xxxhdpi" src="www/icons/icon-192.png" />
+  </platform>
+</widget>
