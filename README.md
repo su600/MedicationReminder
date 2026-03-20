@@ -88,7 +88,7 @@ npm run android:build:debug
 
 构建完成后，可在 `android-build/platforms/android/app/build/outputs/apk/debug/` 下找到调试安装包。
 当前 Android 封装配置最低支持 Android 7.0（API 24）。
-Android 封装默认仅允许 HTTPS 网络访问（`config.xml`），用于支持可配置的 AI / 家庭同步服务地址。
+Android 封装默认允许 HTTPS 网络访问，并额外放行 `http://localhost` / `http://127.0.0.1`，便于本机调试自定义 AI / 同步服务；正式环境仍建议使用 HTTPS。
 `npm run android:init` 使用了 `rm/cp` 命令，需在 Linux/macOS 或 Windows + WSL 环境执行。
 
 ### 文件结构
@@ -192,7 +192,7 @@ npm run android:build:debug
 After building, the debug APK is generated under
 `android-build/platforms/android/app/build/outputs/apk/debug/`.
 The current Android wrapper configuration requires Android 7.0+ (API 24).
-The Android wrapper allows HTTPS-only network access by default (`config.xml`) so configurable AI/family sync endpoints can be used.
+The Android wrapper allows HTTPS by default, and also permits `http://localhost` / `http://127.0.0.1` for local debugging of custom AI/family sync endpoints. Use HTTPS endpoints for production.
 `npm run android:init` uses `rm/cp`, so run it on Linux/macOS or Windows with WSL.
 
 ### Project Structure

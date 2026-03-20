@@ -9,6 +9,8 @@
 
   <content src="index.html" />
   <access origin="https://*/*" />
+  <access origin="http://localhost/*" />
+  <access origin="http://127.0.0.1/*" />
 
   <preference name="Orientation" value="portrait" />
   <preference name="AndroidXEnabled" value="true" />
