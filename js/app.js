@@ -1773,7 +1773,7 @@ const App = {
       const s = this.state.settings;
       const localApiTs  = s.apiUpdatedAt || 0;
       const remoteApiTs = remote.apiUpdatedAt || 0;
-      if (remote.apiKey && (remoteApiTs > localApiTs || (!s.apiKey && remote.apiKey))) {
+      if (remote.apiKey && (remoteApiTs > localApiTs || !s.apiKey)) {
         s.apiProvider   = remote.apiProvider || s.apiProvider;
         s.apiBaseUrl    = remote.apiBaseUrl  || s.apiBaseUrl;
         s.apiModel      = remote.apiModel    || s.apiModel;
