@@ -118,6 +118,10 @@ const App = {
       }
     }
 
+    // 3. Ensure new fields exist for upgraded installs
+    if (s.apiUpdatedAt === undefined) { s.apiUpdatedAt = 0; needSave = true; }
+    if (s.lastSyncTime === undefined) { s.lastSyncTime = null; needSave = true; }
+
     if (needSave) await DB.saveSettings(s);
   },
 
@@ -1236,6 +1240,21 @@ const App = {
     const syncUrlInp = document.getElementById('syncUrlInput');
     if (syncUrlInp) syncUrlInp.value = this.state.settings.syncUrl || '';
 
+    // Last sync time
+    const lastSyncEl = document.getElementById('lastSyncTime');
+    if (lastSyncEl) {
+      const t = this.state.settings.lastSyncTime;
+      if (t) {
+        const d = new Date(t);
+        lastSyncEl.textContent = d.toLocaleString('zh-CN', {
+          month: 'numeric', day: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+      } else {
+        lastSyncEl.textContent = '尚未同步';
+      }
+    }
+
     // Notification toggle
     const notifToggle = document.getElementById('notificationToggle');
     if (notifToggle) notifToggle.checked = this.state.settings.notifications;
@@ -1505,6 +1524,7 @@ const App = {
 
     s.apiProvider = provider;
     s.apiKey      = apiKey;
+    s.apiUpdatedAt = Date.now();
 
     if (provider === 'github') {
       s.apiBaseUrl = GITHUB_AI_BASE_URL;
@@ -1652,10 +1672,11 @@ const App = {
       users:       allUsers,
       medications: allMeds,
       records:     allRecords,
-      apiProvider: this.state.settings.apiProvider || 'github',
-      apiBaseUrl:  this.state.settings.apiBaseUrl  || '',
-      apiModel:    this.state.settings.apiModel     || '',
-      apiKey:      this.state.settings.apiKey       || ''
+      apiProvider:   this.state.settings.apiProvider || 'github',
+      apiBaseUrl:    this.state.settings.apiBaseUrl  || '',
+      apiModel:      this.state.settings.apiModel     || '',
+      apiKey:        this.state.settings.apiKey       || '',
+      apiUpdatedAt:  this.state.settings.apiUpdatedAt || 0
     };
 
     try {
@@ -1748,17 +1769,24 @@ const App = {
         }
       }
 
-      // ── Merge API settings (apply remote key if local has none) ──
+      // ── Merge API settings (bidirectional: use the newer config based on apiUpdatedAt) ──
       const s = this.state.settings;
-      if (remote.apiKey && !s.apiKey) {
-        s.apiProvider = remote.apiProvider || s.apiProvider;
-        s.apiBaseUrl  = remote.apiBaseUrl  || s.apiBaseUrl;
-        s.apiModel    = remote.apiModel    || s.apiModel;
-        s.apiKey      = remote.apiKey;
+      const localApiTs  = s.apiUpdatedAt || 0;
+      const remoteApiTs = remote.apiUpdatedAt || 0;
+      if (remote.apiKey && (remoteApiTs > localApiTs || (!s.apiKey && remote.apiKey))) {
+        s.apiProvider   = remote.apiProvider || s.apiProvider;
+        s.apiBaseUrl    = remote.apiBaseUrl  || s.apiBaseUrl;
+        s.apiModel      = remote.apiModel    || s.apiModel;
+        s.apiKey         = remote.apiKey;
+        s.apiUpdatedAt   = remoteApiTs || Date.now();
         await DB.saveSettings(s);
         this._updateProviderDisplay();
         this._updateChatFabVisibility();
       }
+
+      // ── Update last sync time ──
+      s.lastSyncTime = Date.now();
+      await DB.saveSettings(s);
 
       // ── Reload local state from DB ──
       await this.loadUsers();
@@ -1794,6 +1822,118 @@ const App = {
     } finally {
       this._syncInProgress = false;
     }
+  },
+
+  /* ─────────────────────────────────────────
+     DATA EXPORT / IMPORT (backup & restore)
+     ───────────────────────────────────────── */
+
+  /** Export all local data as a downloadable JSON file. */
+  async exportData() {
+    try {
+      const users       = await DB.getUsers();
+      const medications = await DB.getMedications();
+      const records     = await DB.getRecords();
+      const settings    = await DB.getSettings();
+
+      // Strip sensitive syncUrl from export (keep API key for family restore)
+      const exportSettings = { ...settings };
+      delete exportSettings.syncUrl;
+      delete exportSettings.activeUserId;
+
+      const data = {
+        version:     1,
+        exportedAt:  new Date().toISOString(),
+        users,
+        medications,
+        records,
+        settings:    exportSettings
+      };
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `medication-backup-${todayStr()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('数据已导出 ✓', 'success');
+    } catch (err) {
+      console.error('Export failed:', err);
+      showToast('导出失败：' + err.message, 'error');
+    }
+  },
+
+  /** Import data from a JSON backup file. */
+  async importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // Basic validation
+        if (!data.version || !Array.isArray(data.users) || !Array.isArray(data.medications)) {
+          showToast('文件格式无效，请选择正确的备份文件', 'error');
+          return;
+        }
+
+        if (!confirm('导入将覆盖现有数据，确认继续？')) return;
+
+        // Restore users
+        for (const u of data.users) {
+          if (u.id && u.name) await DB.saveUser(u);
+        }
+
+        // Restore medications
+        for (const m of data.medications) {
+          if (m.id && m.userId) await DB.saveMedication(m);
+        }
+
+        // Restore records
+        if (Array.isArray(data.records)) {
+          for (const r of data.records) {
+            if (r.id && r.userId) await DB.saveRecord(r);
+          }
+        }
+
+        // Restore settings (merge with current to preserve syncUrl and activeUserId)
+        if (data.settings) {
+          const current = this.state.settings;
+          const restored = {
+            ...current,
+            ...data.settings,
+            // Keep local-only settings
+            syncUrl:      current.syncUrl,
+            activeUserId: current.activeUserId
+          };
+          await DB.saveSettings(restored);
+          this.state.settings = restored;
+        }
+
+        // Reload everything
+        await this.loadUsers();
+        if (this.state.settings.activeUserId) {
+          await this.setActiveUser(this.state.settings.activeUserId, false);
+        } else if (this.state.users.length > 0) {
+          await this.setActiveUser(this.state.users[0].id, true);
+        }
+        this.renderAll();
+        showToast('数据已成功导入 ✓', 'success');
+      } catch (err) {
+        console.error('Import failed:', err);
+        showToast('导入失败：' + err.message, 'error');
+      }
+    });
+    input.click();
   },
 
   /* ─────────────────────────────────────────
@@ -2114,6 +2254,10 @@ const App = {
       await DB.clearAll();
       location.reload();
     });
+
+    // Data export / import
+    document.getElementById('exportDataBtn')?.addEventListener('click', () => this.exportData());
+    document.getElementById('importDataBtn')?.addEventListener('click', () => this.importData());
 
     // History navigation
     document.getElementById('historyPrev')?.addEventListener('click', () => {

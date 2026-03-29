@@ -233,7 +233,7 @@
           </div>
           <div class="settings-item">
             <span class="text-muted" style="font-size:0.9rem">
-              将家庭代码告诉家人，并配置同步服务地址。家人在新设备上输入相同代码和服务地址后即可拉取药单、服药记录及 AI API Key。每个家庭只能有一位患者，家庭成员可查看患者的用药情况但无法勾选服药。
+              将家庭代码告诉家人，并配置同步服务地址。家人在新设备上输入相同代码和服务地址后即可同步药单、服药记录及 AI API 配置。任何家庭成员更新 API 配置后，其他成员同步时将自动获取最新配置。每个家庭只能有一位患者，家庭成员可查看患者的用药情况但无法勾选服药。
             </span>
           </div>
           <div class="settings-item">
@@ -246,6 +246,10 @@
             <button class="btn-text" id="syncNowBtn">立即同步 ↻</button>
           </div>
           <div class="settings-item">
+            <span>上次同步</span>
+            <span class="text-muted" id="lastSyncTime">尚未同步</span>
+          </div>
+          <div class="settings-item">
             <span>加入其他家庭</span>
             <button class="btn-text" id="joinFamilyBtn">更改 →</button>
           </div>
@@ -254,6 +258,23 @@
         <div class="settings-group">
           <div class="settings-group-title">用户管理</div>
           <div id="settingsUserList"></div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">数据备份</div>
+          <div class="settings-item">
+            <span class="text-muted" style="font-size:0.9rem">
+              定期备份可防止数据丢失。导出的 JSON 文件包含所有用户、药品和服药记录。
+            </span>
+          </div>
+          <div class="settings-item">
+            <span>导出备份</span>
+            <button class="btn-text" id="exportDataBtn">导出 JSON ↓</button>
+          </div>
+          <div class="settings-item">
+            <span>导入备份</span>
+            <button class="btn-text" id="importDataBtn">选择文件 ↑</button>
+          </div>
         </div>
 
         <div class="settings-group">
